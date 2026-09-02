@@ -26,7 +26,7 @@ def _spread_text(cand, lang: str) -> str:
     )
 
 
-def _ladder_rows(snapshot: TickerSnapshot, lang: str) -> list[str]:
+def _bucket_rows(snapshot: TickerSnapshot, lang: str) -> list[str]:
     rows = []
     for bucket in (DeltaBucket.CONSERVATIVE, DeltaBucket.STANDARD):
         cand = snapshot.buckets.get(bucket)
@@ -96,8 +96,8 @@ def render_markdown(run: DeskRun) -> str:
             )
         lines.extend(snap.notes)
         lines.append("")
-        lines.append(f"### {t(lang, 'md_ladder')}")
-        lines.extend(_ladder_rows(snap, lang))
+        lines.append(f"### {t(lang, 'md_buckets')}")
+        lines.extend(_bucket_rows(snap, lang))
         lines.append("")
     lines.append(f"## {t(lang, 'md_decisions')}")
     for decision in run.desk.decisions:

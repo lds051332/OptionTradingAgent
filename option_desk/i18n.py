@@ -21,7 +21,8 @@ def language_instruction(lang: str) -> str:
     return (
         "\n\nWrite all user-facing prose in Simplified Chinese: event titles, "
         "detail, why, premium_tradeoff, and portfolio_note. Keep enum values, "
-        "tickers, contract_id, dates, and numbers unchanged."
+        "tickers, contract_id, dates, and numbers unchanged. Call the "
+        "conservative/standard candidates 档位, never 梯子 or 阶梯."
     )
 
 
@@ -62,7 +63,7 @@ UI = {
         "md_holding": "Holding window",
         "md_hard": "Hard skip",
         "md_soft": "Soft macro",
-        "md_ladder": "Ladder",
+        "md_buckets": "Delta buckets",
         "md_decisions": "Decisions",
         "md_tradeoff": "premium tradeoff",
         "md_disclaimer": "Not investment advice. Confirm fills and assignment cash before sending any order.",
@@ -115,7 +116,7 @@ UI = {
         "md_holding": "持有窗口",
         "md_hard": "硬性跳过",
         "md_soft": "软宏观",
-        "md_ladder": "合约梯子",
+        "md_buckets": "候选档位",
         "md_decisions": "决策",
         "md_tradeoff": "权利金取舍",
         "md_disclaimer": "不构成投资建议。下单前请核对成交价与被指派所需现金。",

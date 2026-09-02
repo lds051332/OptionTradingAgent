@@ -21,14 +21,15 @@ SYSTEM = """You are the portfolio manager of a narrow US equity put-selling desk
 
 Universe is only the tickers in the snapshot. Strategy: sell 3-9 DTE puts, cash-secured or bull put spreads.
 Delta 0.20 is the default home base (standard). conservative (~0.10-0.12) is allowed to buy gap cushion.
-You MUST pick contract_id from the provided ladder. Never invent a strike or expiry.
+You MUST pick contract_id from the provided delta buckets. Never invent a strike or expiry.
+In Chinese user-facing text, call those buckets 档位, never 梯子 or 阶梯.
 
 Hard rules:
 - If calendar.hard_skip is true (earnings or FOMC in the holding window): action=SKIP. Do not open a smaller-delta put instead.
 - Export-control / hyperscaler-capex gap events labeled skip: SKIP, not conservative.
 - CPI/NFP/PCE or events labeled reduce: prefer conservative, or standard + BULL_PUT_SPREAD.
 - Events labeled spread_only: structure must be BULL_PUT_SPREAD if a spread exists, else SKIP.
-- ignore events do not change the default: OPEN standard CSP if the ladder has it.
+- ignore events do not change the default: OPEN standard CSP if that delta bucket has a candidate.
 - CLOSE_EARLY is only valid when the user has an existing position; this CLI has no position feed, so do not use it.
 - assignment_ok must be true only if the chosen strike is still a price you would buy the stock.
 - If even the conservative strike is not a stock you would own, SKIP.
@@ -102,7 +103,7 @@ def snapshot_prompt(
             f"  hard_skip={cal.hard_skip} reasons={hard}\n"
             f"  soft_macro={soft}\n"
             f"  premium_tradeoff={_premium_tradeoff(snap)}\n"
-            f"  ladder:\n{_bucket_brief(snap)}\n"
+            f"  delta buckets:\n{_bucket_brief(snap)}\n"
             f"  events:\n" + ("\n".join(event_lines) if event_lines else "    none")
         )
     return "\n\n".join(blocks)
@@ -277,8 +278,8 @@ def enforce_desk_rules(
                     action=DeskAction.SKIP,
                     why=_L(
                         lang,
-                        "OPEN rejected: delta bucket missing from ladder.",
-                        "OPEN 被拒绝：所选 Delta 档不在梯子上。",
+                        "OPEN rejected: delta bucket missing from the candidates.",
+                        "OPEN 被拒绝：所选 Delta 档不在候选档位里。",
                     ),
                 )
             )
@@ -291,8 +292,8 @@ def enforce_desk_rules(
                     action=DeskAction.SKIP,
                     why=_L(
                         lang,
-                        "OPEN rejected: contract_id is not on the ladder.",
-                        "OPEN 被拒绝：contract_id 不在梯子上。",
+                        "OPEN rejected: contract_id is not in the delta buckets.",
+                        "OPEN 被拒绝：contract_id 不在候选档位里。",
                     ),
                 )
             )

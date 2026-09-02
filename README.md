@@ -9,11 +9,11 @@ CLI 和浏览器共用同一条流水线：拉链 → 日历门控 → 事件侦
 ## 做什么
 
 - 从 yfinance 拉**实时期权链**，用链上 IV + Black-Scholes **估算** Put Delta（不是交易所官方 Greek）
-- 筛出 `conservative`（约 0.10Δ）和 `standard`（约 0.20Δ）两档梯子；`0.2Δ` 是默认锚，不是死门
+- 筛出 `conservative`（约 0.10Δ）和 `standard`（约 0.20Δ）两档候选；`0.2Δ` 是默认锚，不是死门
 - 持有期内撞上财报或 FOMC → **硬 SKIP**（不许改成更小 Delta 继续卖）
 - CPI / NFP / PCE 作为软标签交给终审
 - LLM 按固定 query 搜日历外突发（出口管制、capex、诉讼等）
-- 终审只许输出 `SKIP | OPEN` + `CSP | BULL_PUT_SPREAD` + 档位 + **梯子里已有的 `contract_id`**
+- 终审只许输出 `SKIP | OPEN` + `CSP | BULL_PUT_SPREAD` + 档位 + **档位里已有的 `contract_id`**
 - 没有 API key 也能跑：事件分类和终审改用启发式规则
 - Web 决策台用 SSE 逐步推进度；Docker Compose 一容器部署
 
@@ -92,7 +92,7 @@ option-desk analyze --tickers NVDA,MSFT
 
 `--lang zh` 会把终端表头、markdown 报告、以及 LLM 写的标题/理由改成简体中文。枚举值（`OPEN`、`BULL_PUT_SPREAD`、`spread_only`）、ticker、`contract_id` 和数字保持原样。也可以在 `.env` 里设 `OPTION_DESK_OUTPUT_LANGUAGE=zh`。
 
-终端会打印梯子、日历门控、事件和终审，同时写一份 markdown 到 `~/.option_desk/reports/`。
+终端会打印档位、日历门控、事件和终审，同时写一份 markdown 到 `~/.option_desk/reports/`。
 
 `--as-of` 只移动 DTE 和日历窗。期权链始终是 yfinance **实时快照**。
 
@@ -154,7 +154,7 @@ HTTPS 时再设 `OPTION_DESK_WEB_SECURE_COOKIE=1`。
 2. 持有期内遇财报或 FOMC → 硬 SKIP
 3. CPI / NFP / PCE 作为软标签
 4. LLM 按固定 query 搜日历外突发
-5. 终审输出动作 + 结构 + 档位 + **梯子里的 `contract_id`**
+5. 终审输出动作 + 结构 + 档位 + **档位里的 `contract_id`**
 
 CLI 走 `run_desk()`；Web 走同一条路上的 `iter_desk()`，逐步推 SSE。不要把筛子逻辑再写一遍。
 

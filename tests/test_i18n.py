@@ -54,6 +54,7 @@ def test_markdown_zh_headers():
     )
     md = render_markdown(run)
     assert "# 卖 Put 决策台" in md
+    assert "候选档位" in md
     assert "## 决策" in md
     assert "测试理由" in md
     assert "不构成投资建议" in md

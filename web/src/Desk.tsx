@@ -320,7 +320,7 @@ function StepCard({ step }: { step: TimelineStep }) {
         ) : null}
       </header>
       {live ? <WorkingReel label={step.message} /> : <p className="text-sm text-[var(--mute)]">{step.message}</p>}
-      {step.snapshot ? <Ladder snapshot={step.snapshot} /> : null}
+      {step.snapshot ? <Buckets snapshot={step.snapshot} /> : null}
       {!live && step.calendar ? <CalendarBlock calendar={step.calendar} /> : null}
       {step.hits && step.hits.length > 0 ? <Hits hits={step.hits} /> : null}
       {!live && step.events ? <Events events={step.events} /> : null}
@@ -344,12 +344,12 @@ function stepTitle(step: TimelineStep): string {
   return step.type;
 }
 
-function Ladder({ snapshot }: { snapshot: TickerSnapshot }) {
+function Buckets({ snapshot }: { snapshot: TickerSnapshot }) {
   const buckets = Object.values(snapshot.buckets);
   return (
     <div className="mt-3 overflow-x-auto">
       <p className="font-[family-name:var(--font-mono)] text-xs text-[var(--brass)]">
-        {snapshot.ticker} 现价 {snapshot.spot.toFixed(2)}
+        {snapshot.ticker} 现价 {snapshot.spot.toFixed(2)} · 候选档位
       </p>
       {buckets.length === 0 ? (
         <p className="mt-2 text-sm text-[var(--mute)]">两档都没有合格合约。</p>

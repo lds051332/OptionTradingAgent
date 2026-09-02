@@ -30,7 +30,7 @@ def analyze(
         help="Output language: en or zh. Default OPTION_DESK_OUTPUT_LANGUAGE or en.",
     ),
 ) -> None:
-    """Screen the put ladder, gate the calendar, scout events, and print a desk decision."""
+    """Screen put candidates, gate the calendar, scout events, and print a desk decision."""
     settings = get_settings()
     if lang is not None:
         settings = settings.model_copy(update={"output_language": normalize_lang(lang)})

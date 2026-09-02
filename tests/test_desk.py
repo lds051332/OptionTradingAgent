@@ -100,7 +100,7 @@ def test_invented_contract_id_rejected():
     )
     out = enforce_desk_rules(raw, [snap], cash=55000)
     assert out.decisions[0].action == DeskAction.SKIP
-    assert "not on the ladder" in out.decisions[0].why
+    assert "not in the delta buckets" in out.decisions[0].why
 
 
 def test_heuristic_opens_standard_when_quiet():

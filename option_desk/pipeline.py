@@ -90,7 +90,7 @@ def iter_desk(
             yield stream_event(
                 "screen_done",
                 ticker=ticker,
-                message=f"{ticker} 现价 {snap.spot:.2f}，梯子 {len(snap.buckets)} 档",
+                message=f"{ticker} 现价 {snap.spot:.2f}，筛出 {len(snap.buckets)} 档候选",
                 snapshot=_dump(snap),
             )
             yield stream_event(
@@ -148,7 +148,7 @@ def iter_desk(
             warnings=scout_warnings,
         )
 
-        yield stream_event("desk_started", message="终审中，正在梯子上选档…")
+        yield stream_event("desk_started", message="终审中，正在候选档位里选约…")
         desk = run_desk_llm(snapshots, events, settings.cash, settings, llm)
         yield stream_event(
             "desk_done",
