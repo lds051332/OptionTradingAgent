@@ -1,0 +1,20 @@
+from option_desk.chain.greeks import abs_put_delta, put_delta
+
+
+def test_atm_put_delta_near_half():
+    delta = put_delta(100.0, 100.0, 30 / 365.0, 0.20, r=0.0, q=0.0)
+    assert delta is not None
+    assert abs(delta - (-0.5)) < 0.03
+
+
+def test_otm_put_abs_delta_less_than_atm():
+    atm = abs_put_delta(100.0, 100.0, 7 / 365.0, 0.40, r=0.05)
+    otm = abs_put_delta(100.0, 90.0, 7 / 365.0, 0.40, r=0.05)
+    assert atm is not None and otm is not None
+    assert otm < atm
+
+
+def test_invalid_inputs_return_none():
+    assert put_delta(0, 100, 0.02, 0.2) is None
+    assert put_delta(100, 100, 0, 0.2) is None
+    assert put_delta(100, 100, 0.02, 0) is None

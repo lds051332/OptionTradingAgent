@@ -1,0 +1,12 @@
+.git
+.venv
+venv
+__pycache__
+*.pyc
+.pytest_cache
+.env
+web/node_modules
+web/dist
+*.egg-info
+.cursor
+agent-transcripts

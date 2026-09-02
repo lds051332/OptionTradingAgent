@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "option-desk"
+version = "0.1.0"
+description = "Narrow CLI desk for short-dated US equity cash-secured puts"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "yfinance>=0.2.40",
+    "typer>=0.12",
+    "rich>=13.7",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "python-dotenv>=1.0",
+    "langchain-openai>=0.3",
+    "langchain-core>=0.3",
+    "scipy>=1.13",
+    "pyyaml>=6.0",
+    "ddgs>=9.0",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "itsdangerous>=2.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "httpx>=0.27"]
+tavily = ["tavily-python>=0.5"]
+
+[project.scripts]
+option-desk = "option_desk.cli:app"
+option-desk-web = "option_desk.web.app:main"
+
+[tool.setuptools.packages.find]
+include = ["option_desk*"]
+
+[tool.setuptools.package-data]
+option_desk = ["calendar/*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

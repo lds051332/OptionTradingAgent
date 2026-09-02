@@ -1,0 +1,7 @@
+services:
+  option-desk:
+    build: .
+    ports:
+      - "${OPTION_DESK_WEB_PORT:-8000}:8000"
+    env_file: .env
+    restart: unless-stopped

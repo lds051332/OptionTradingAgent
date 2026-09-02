@@ -1,0 +1,47 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Secrets — never commit real keys
+.env
+.env.*
+!.env.example
+
+# IDE / editor
+.idea/
+.vscode/
+.cursor/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Frontend
+web/node_modules/
+web/dist/
+
+# Logs and local reports
+*.log
+reports/
+
+# Local notes (not part of the public repo)
+TradingAgents-深度解析.md
+进度.md
+
+# Optional local reference trees
+TradingAgents-src/
+agent-transcripts/

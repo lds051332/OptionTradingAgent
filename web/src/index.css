@@ -1,0 +1,231 @@
+@import "tailwindcss";
+
+:root {
+  --night: #0e1628;
+  --blotter: #152036;
+  --card: #1c2a42;
+  --hairline: #334766;
+  --brass: #c4a35a;
+  --chalk: #efe8d8;
+  --mute: #8fa0b8;
+  --open: #3d9a78;
+  --skip: #c56a4e;
+  --font-display: "Besley", "Times New Roman", serif;
+  --font-body: "Schibsted Grotesk", "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--chalk);
+  background:
+    radial-gradient(1200px 500px at 80% -10%, rgba(196, 163, 90, 0.08), transparent 50%),
+    linear-gradient(180deg, #121c32 0%, var(--night) 38%, #0b1220 100%);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+
+.ticker-menu {
+  scrollbar-width: thin;
+  scrollbar-color: var(--brass) var(--night);
+}
+
+.ticket {
+  position: relative;
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-radius: 2px 10px 10px 2px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
+}
+
+.ticket::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 10px;
+  bottom: 10px;
+  width: 12px;
+  background: radial-gradient(circle at 0 6px, var(--night) 5px, transparent 5.5px);
+  background-size: 12px 18px;
+  pointer-events: none;
+}
+
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 5.4rem;
+  padding: 0.35rem 0.7rem;
+  border: 2px solid currentColor;
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transform: rotate(-8deg);
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+.stamp-open {
+  color: var(--open);
+}
+
+.stamp-skip {
+  color: var(--skip);
+}
+
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: var(--brass);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.ticket-live {
+  border-color: color-mix(in srgb, var(--brass) 70%, var(--hairline));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--brass) 40%, transparent),
+    0 12px 32px rgba(196, 163, 90, 0.14);
+}
+
+.work-reel-label {
+  margin: 0 0 0.7rem;
+  font-size: 0.9rem;
+  color: var(--chalk);
+}
+
+.work-ellipsis::after {
+  content: "";
+  animation: ellipsis 1.2s steps(4, end) infinite;
+}
+
+.work-reel-track {
+  position: relative;
+  height: 3px;
+  overflow: hidden;
+  background: var(--hairline);
+}
+
+.work-reel-track::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 38%;
+  background: var(--brass);
+  animation: reel 1.15s ease-in-out infinite;
+}
+
+.work-skel {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.85rem;
+}
+
+.work-skel span {
+  display: block;
+  height: 10px;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--hairline) 0%,
+    color-mix(in srgb, var(--brass) 38%, var(--hairline)) 50%,
+    var(--hairline) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.35s linear infinite;
+}
+
+.work-skel span:nth-child(1) {
+  width: 92%;
+}
+
+.work-skel span:nth-child(2) {
+  width: 74%;
+}
+
+.work-skel span:nth-child(3) {
+  width: 58%;
+}
+
+@keyframes reel {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(280%);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+@keyframes ellipsis {
+  0% {
+    content: "";
+  }
+  25% {
+    content: ".";
+  }
+  50% {
+    content: "..";
+  }
+  75% {
+    content: "...";
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-dot,
+  .work-reel-track::after,
+  .work-skel span,
+  .work-ellipsis::after {
+    animation: none;
+  }
+
+  .work-ellipsis::after {
+    content: "…";
+  }
+}

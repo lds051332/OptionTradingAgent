@@ -1,0 +1,58 @@
+# Macro calendar for the put desk. Dates are release/decision days (not meeting day 1).
+# FOMC: Federal Reserve official 2026 schedule (statement day).
+# CPI: BLS official release schedule.
+# NFP: BLS Employment Situation (typically first Friday).
+# PCE: approximate BEA personal income/outlays Fridays — verify before live use.
+# Edit this file when a date is revised.
+
+fomc:
+  - 2026-01-28
+  - 2026-03-18
+  - 2026-04-29
+  - 2026-06-17
+  - 2026-07-29
+  - 2026-09-16
+  - 2026-10-28
+  - 2026-12-09
+
+cpi:
+  - 2026-01-13
+  - 2026-02-13
+  - 2026-03-11
+  - 2026-04-10
+  - 2026-05-12
+  - 2026-06-10
+  - 2026-07-14
+  - 2026-08-12
+  - 2026-09-11
+  - 2026-10-14
+  - 2026-11-10
+  - 2026-12-10
+
+nfp:
+  - 2026-01-09
+  - 2026-02-06
+  - 2026-03-06
+  - 2026-04-03
+  - 2026-05-08
+  - 2026-06-05
+  - 2026-07-02
+  - 2026-08-07
+  - 2026-09-04
+  - 2026-10-02
+  - 2026-11-06
+  - 2026-12-04
+
+pce:
+  - 2026-01-30
+  - 2026-02-27
+  - 2026-03-27
+  - 2026-04-30
+  - 2026-05-29
+  - 2026-06-26
+  - 2026-07-31
+  - 2026-08-28
+  - 2026-09-25
+  - 2026-10-30
+  - 2026-11-25
+  - 2026-12-23
