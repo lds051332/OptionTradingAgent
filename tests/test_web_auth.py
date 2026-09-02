@@ -1,8 +1,11 @@
+import asyncio
+import threading
+
 import pytest
 from fastapi.testclient import TestClient
 
 from option_desk.stream import stream_event
-from option_desk.web.app import _RUN_LOCK, create_app
+from option_desk.web.app import _RUN_LOCK, _iter_sse, create_app
 
 
 @pytest.fixture
@@ -83,6 +86,36 @@ def test_second_run_conflict(client):
     finally:
         if _RUN_LOCK.locked():
             _RUN_LOCK.release()
+
+
+def test_disconnect_releases_run_lock(monkeypatch):
+    resume = threading.Event()
+    started = threading.Event()
+
+    def fake_iter(tickers, as_of=None, settings=None):
+        yield stream_event("run_started", message="go", tickers=tickers)
+        started.set()
+        resume.wait(timeout=10)
+        yield stream_event("run_finished", message="done", run={"ok": True})
+
+    monkeypatch.setattr("option_desk.web.app.iter_desk", fake_iter)
+
+    async def scenario() -> None:
+        assert _RUN_LOCK.acquire(blocking=False)
+        stream = _iter_sse(["NVDA"], 0.2, 55000)
+        try:
+            first = await anext(stream)
+            assert b"run_started" in first
+            assert await asyncio.to_thread(started.wait, 5)
+            await stream.aclose()
+            assert not _RUN_LOCK.locked()
+        finally:
+            resume.set()
+            await stream.aclose()
+            if _RUN_LOCK.locked():
+                _RUN_LOCK.release()
+
+    asyncio.run(scenario())
 
 
 def test_delta_out_of_range(client):

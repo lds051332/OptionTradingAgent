@@ -91,6 +91,31 @@ export type SearchHit = {
   query: string;
 };
 
+export type PayoffPoint = {
+  spot: number;
+  pnl: number;
+};
+
+export type ExpirationPayoff = {
+  structure: string;
+  spot: number;
+  expiry: string;
+  dte: number;
+  short_strike: number;
+  long_strike: number | null;
+  breakeven: number;
+  credit_per_share: number;
+  contracts: number;
+  max_profit: number;
+  max_loss: number;
+  loss_limited: boolean;
+  assignment_cash: number | null;
+  pnl_at_spot: number;
+  x_min: number;
+  x_max: number;
+  points: PayoffPoint[];
+};
+
 export type TickerDecision = {
   ticker: string;
   action: string;
@@ -100,6 +125,7 @@ export type TickerDecision = {
   assignment_ok: boolean;
   why: string;
   premium_tradeoff: string | null;
+  payoff: ExpirationPayoff | null;
 };
 
 export type DeskOutput = {

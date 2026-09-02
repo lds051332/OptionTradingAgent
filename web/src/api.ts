@@ -35,16 +35,20 @@ export async function logout(): Promise<void> {
   await fetch("/api/logout", { method: "POST", credentials: "include" });
 }
 
-export async function* startRun(body: {
-  tickers: string[];
-  delta: number;
-  cash: number;
-}): AsyncGenerator<StreamEvent> {
+export async function* startRun(
+  body: {
+    tickers: string[];
+    delta: number;
+    cash: number;
+  },
+  options?: { signal?: AbortSignal },
+): AsyncGenerator<StreamEvent> {
   const res = await fetch("/api/runs", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
     body: JSON.stringify(body),
+    signal: options?.signal,
   });
   if (!res.ok) {
     await readJson(res);

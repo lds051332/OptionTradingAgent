@@ -5,6 +5,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from option_desk.agents.structured import invoke_structured
 from option_desk.config import Settings
 from option_desk.i18n import language_instruction, localize_hard_reason, normalize_lang
+from option_desk.payoff import attach_payoffs
 from option_desk.schemas import (
     DeltaBucket,
     DeskAction,
@@ -354,6 +355,15 @@ def enforce_desk_rules(
     )
 
 
+def _finalize_desk(
+    output: DeskOutput,
+    snapshots: list[TickerSnapshot],
+    cash: float,
+    lang: str,
+) -> DeskOutput:
+    return attach_payoffs(enforce_desk_rules(output, snapshots, cash, lang), snapshots)
+
+
 def run_desk_llm(
     snapshots: list[TickerSnapshot],
     events: list[ScoutedEvent],
@@ -362,7 +372,7 @@ def run_desk_llm(
     llm,
 ) -> DeskOutput:
     if llm is None:
-        return enforce_desk_rules(
+        return _finalize_desk(
             heuristic_desk(snapshots, events, cash, settings.output_language),
             snapshots,
             cash,
@@ -379,7 +389,7 @@ def run_desk_llm(
             provider=settings.llm_endpoint().provider,
         )
         raw = DeskOutput(
-            decisions=parsed.decisions,
+            decisions=[TickerDecision.model_validate(d.model_dump()) for d in parsed.decisions],
             portfolio_note=parsed.portfolio_note,
             used_llm=True,
         )
@@ -390,5 +400,5 @@ def run_desk_llm(
             f"LLM desk failed ({exc}); used heuristic.",
             f"LLM 终审失败（{exc}）；改用启发式。",
         )
-        return enforce_desk_rules(fallback, snapshots, cash, settings.output_language)
-    return enforce_desk_rules(raw, snapshots, cash, settings.output_language)
+        return _finalize_desk(fallback, snapshots, cash, settings.output_language)
+    return _finalize_desk(raw, snapshots, cash, settings.output_language)

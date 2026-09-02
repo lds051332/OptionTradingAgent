@@ -113,7 +113,9 @@ class EventList(BaseModel):
     events: list[ScoutedEvent] = Field(default_factory=list)
 
 
-class TickerDecision(BaseModel):
+class DeskLLMDecision(BaseModel):
+    """Fields the desk model may emit. Payoff is computed later, never by the LLM."""
+
     ticker: str
     action: DeskAction
     structure: Structure | None = None
@@ -124,14 +126,45 @@ class TickerDecision(BaseModel):
     premium_tradeoff: str | None = None
 
 
+class PayoffPoint(BaseModel):
+    spot: float
+    pnl: float
+
+
+class ExpirationPayoff(BaseModel):
+    structure: Structure
+    spot: float
+    expiry: date
+    dte: int
+    short_strike: float
+    long_strike: float | None = None
+    breakeven: float
+    credit_per_share: float
+    contracts: int
+    max_profit: float
+    max_loss: float
+    loss_limited: bool
+    assignment_cash: float | None = None
+    pnl_at_spot: float
+    x_min: float
+    x_max: float
+    points: list[PayoffPoint] = Field(default_factory=list)
+
+
+class TickerDecision(DeskLLMDecision):
+    payoff: ExpirationPayoff | None = None
+
+
 class DeskLLMResult(BaseModel):
     """Shape the model is allowed to emit. used_llm is filled by the caller."""
 
-    decisions: list[TickerDecision]
+    decisions: list[DeskLLMDecision]
     portfolio_note: str = ""
 
 
-class DeskOutput(DeskLLMResult):
+class DeskOutput(BaseModel):
+    decisions: list[TickerDecision]
+    portfolio_note: str = ""
     used_llm: bool = False
 
 

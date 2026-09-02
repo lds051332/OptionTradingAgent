@@ -88,6 +88,14 @@ def _dist_dir() -> Path:
     return project_root() / "web" / "dist"
 
 
+def _release_run_lock(released: list[bool], guard: threading.Lock) -> None:
+    with guard:
+        if released[0]:
+            return
+        released[0] = True
+        _RUN_LOCK.release()
+
+
 async def _iter_sse(
     tickers: list[str],
     delta: float,
@@ -95,35 +103,52 @@ async def _iter_sse(
 ) -> AsyncIterator[bytes]:
     queue: asyncio.Queue[StreamEvent | None | BaseException] = asyncio.Queue()
     loop = asyncio.get_running_loop()
-    settings = apply_run_overrides(
-        get_settings(),
-        tickers=tickers,
-        delta=delta,
-        cash=cash,
-        language="zh",
-    )
+    cancel = threading.Event()
+    released = [False]
+    guard = threading.Lock()
+    try:
+        settings = apply_run_overrides(
+            get_settings(),
+            tickers=tickers,
+            delta=delta,
+            cash=cash,
+            language="zh",
+        )
 
-    def worker() -> None:
-        try:
-            for event in iter_desk(tickers, as_of=date.today(), settings=settings):
-                asyncio.run_coroutine_threadsafe(queue.put(event), loop).result()
-        except Exception as exc:
-            asyncio.run_coroutine_threadsafe(queue.put(exc), loop).result()
-        else:
-            asyncio.run_coroutine_threadsafe(queue.put(None), loop).result()
-        finally:
-            _RUN_LOCK.release()
+        def push(item: StreamEvent | None | BaseException) -> bool:
+            if cancel.is_set():
+                return False
+            try:
+                asyncio.run_coroutine_threadsafe(queue.put(item), loop)
+            except Exception:
+                return False
+            return True
 
-    threading.Thread(target=worker, daemon=True, name="desk-run").start()
-    while True:
-        item = await queue.get()
-        if item is None:
-            break
-        if isinstance(item, BaseException):
-            error = StreamEvent(type="run_error", message=f"分析中断：{item}")
-            yield error.to_sse().encode("utf-8")
-            break
-        yield item.to_sse().encode("utf-8")
+        def worker() -> None:
+            try:
+                for event in iter_desk(tickers, as_of=date.today(), settings=settings):
+                    if not push(event):
+                        return
+            except Exception as exc:
+                push(exc)
+            else:
+                push(None)
+            finally:
+                _release_run_lock(released, guard)
+
+        threading.Thread(target=worker, daemon=True, name="desk-run").start()
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            if isinstance(item, BaseException):
+                error = StreamEvent(type="run_error", message=f"分析中断：{item}")
+                yield error.to_sse().encode("utf-8")
+                break
+            yield item.to_sse().encode("utf-8")
+    finally:
+        cancel.set()
+        _release_run_lock(released, guard)
 
 
 def create_app() -> FastAPI:
@@ -154,8 +179,12 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=409, detail="已有一轮分析在进行")
 
         async def stream() -> AsyncIterator[bytes]:
-            async for chunk in _iter_sse(tickers, delta, cash):
-                yield chunk
+            agen = _iter_sse(tickers, delta, cash)
+            try:
+                async for chunk in agen:
+                    yield chunk
+            finally:
+                await agen.aclose()
 
         return StreamingResponse(
             stream(),

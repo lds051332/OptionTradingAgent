@@ -96,23 +96,37 @@ option-desk analyze --tickers NVDA,MSFT
 
 `--as-of` 只移动 DTE 和日历窗。期权链始终是 yfinance **实时快照**。
 
-## Web（本机开发）
+## Web（本机）
 
-两个终端：
+仓库根目录一键启动 / 重启（会先停掉占用端口的旧进程）：
 
-```bash
-# 终端 1
-python -m option_desk.web
+Windows（可双击 `desk.cmd`，或在 PowerShell 里执行）：
 
-# 终端 2
-cd web
-npm install
-npm run dev
+```powershell
+.\desk.cmd
+.\desk.cmd -Dev          # API + Vite 热更新
+.\desk.cmd -Stop         # 只停止
+.\desk.cmd -Build        # 强制重构建前端
+.\desk.cmd -NoBuild      # 有 dist 就不构建
 ```
 
-打开 Vite 提示的地址（默认 `http://127.0.0.1:5173`）。`/api` 会代理到 `:8000`。登录口令就是 `.env` 里的 `OPTION_DESK_WEB_PASSWORD`。
+macOS / Linux：
 
-也可以先 `cd web && npm run build`，再只跑 `python -m option_desk.web`，由 FastAPI 托管 `web/dist`。
+```bash
+chmod +x scripts/desk.sh
+./scripts/desk.sh
+./scripts/desk.sh --dev
+./scripts/desk.sh --stop
+```
+
+默认打开 `http://127.0.0.1:8000`。口令读 `.env` 的 `OPTION_DESK_WEB_PASSWORD`。脚本会处理：已有进程、缺 `.venv`、缺依赖、缺 `.env`、前端 `dist` 过期或缺失。
+
+也可以手动开两个终端：
+
+```bash
+python -m option_desk.web
+cd web && npm install && npm run dev
+```
 
 ## Web（云 Linux）
 

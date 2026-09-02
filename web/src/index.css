@@ -217,6 +217,114 @@ input:focus-visible {
   }
 }
 
+.payoff-tape {
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px dashed var(--hairline);
+}
+
+.payoff-kicker {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+
+.payoff-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.7rem 1rem;
+  margin: 0;
+}
+
+.payoff-stats dt {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+.payoff-stats dd {
+  font-family: var(--font-mono);
+  margin: 0.2rem 0 0;
+  font-size: 0.95rem;
+}
+
+.payoff-plot {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 0.75rem;
+}
+
+.payoff-well {
+  fill: color-mix(in srgb, var(--night) 72%, var(--card));
+}
+
+.payoff-zero {
+  stroke: var(--hairline);
+  stroke-width: 1;
+}
+
+.payoff-fill-up {
+  fill: color-mix(in srgb, var(--open) 30%, transparent);
+}
+
+.payoff-fill-dn {
+  fill: color-mix(in srgb, var(--skip) 28%, transparent);
+}
+
+.payoff-line {
+  fill: none;
+  stroke: var(--chalk);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.payoff-spot {
+  stroke: var(--brass);
+  stroke-width: 1.25;
+  stroke-dasharray: 3 4;
+}
+
+.payoff-tick {
+  stroke: var(--mute);
+}
+
+.payoff-xlabel,
+.payoff-ylabel,
+.payoff-spot-tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.payoff-xlabel {
+  fill: var(--mute);
+}
+
+.payoff-xlabel-be {
+  fill: var(--brass);
+}
+
+.payoff-ylabel {
+  fill: var(--mute);
+}
+
+.payoff-spot-tag {
+  fill: var(--brass);
+}
+
+.payoff-foot {
+  margin: 0.65rem 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--mute);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pulse-dot,
   .work-reel-track::after,

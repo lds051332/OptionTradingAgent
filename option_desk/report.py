@@ -112,6 +112,18 @@ def render_markdown(run: DeskRun) -> str:
         lines.append(f"- **{decision.ticker} {decision.action.value}**{suffix}: {decision.why}")
         if decision.premium_tradeoff:
             lines.append(f"  - {t(lang, 'md_tradeoff')}: {decision.premium_tradeoff}")
+        if decision.payoff:
+            po = decision.payoff
+            loss = (
+                f"${po.max_loss:,.0f} ({t(lang, 'md_max_loss')} {'capped' if po.loss_limited else '@ $0'})"
+                if normalize_lang(lang) != "zh"
+                else f"${po.max_loss:,.0f}（{'有限' if po.loss_limited else '股价到 $0'}）"
+            )
+            lines.append(
+                f"  - {t(lang, 'md_payoff')}: {t(lang, 'md_max_profit')} ${po.max_profit:,.0f}; "
+                f"{t(lang, 'md_breakeven')} {po.breakeven:g}; {loss}"
+            )
+            lines.append(f"  - {t(lang, 'md_payoff_note')}")
     if run.desk.portfolio_note:
         lines += ["", f"_{run.desk.portfolio_note}_"]
     lines.append("")

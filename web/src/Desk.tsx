@@ -1,5 +1,6 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { startRun } from "./api";
+import { PayoffChart } from "./PayoffChart";
 import { TickerCombobox, normalizeSymbol } from "./TickerCombobox";
 import type {
   BucketCandidate,
@@ -150,6 +151,16 @@ export function Desk({ defaults, onLogout }: Props) {
   const [steps, setSteps] = useState<TimelineStep[]>([]);
   const [userPrompt, setUserPrompt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => abortRef.current?.abort();
+  }, []);
+
+  function stopRun() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+  }
 
   const summary = useMemo(
     () => `${ticker || "未选标的"} · Δ${delta.toFixed(2)} · ${compactCash(cash)}`,
@@ -169,18 +180,25 @@ export function Desk({ defaults, onLogout }: Props) {
     setSteps([]);
     setConfigOpen(false);
     setUserPrompt(`分析 ${symbol} · Δ ${delta.toFixed(2)} · 本金 $${money(cash)}`);
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
-      for await (const item of startRun({ tickers: [symbol], delta, cash })) {
+      for await (const item of startRun({ tickers: [symbol], delta, cash }, { signal: controller.signal })) {
         setSteps((current) => applyEvent(current, item));
         if (item.type === "run_error") setError(item.message);
       }
     } catch (err) {
+      if (controller.signal.aborted || (err instanceof Error && err.name === "AbortError")) {
+        return;
+      }
       const message = err instanceof Error ? err.message : "分析失败";
       setError(message);
       setSteps((current) =>
         applyEvent(current, { type: "run_error", message, ticker: null, data: {} }),
       );
     } finally {
+      if (abortRef.current === controller) abortRef.current = null;
       setRunning(false);
     }
   }
@@ -198,7 +216,10 @@ export function Desk({ defaults, onLogout }: Props) {
         </div>
         <button
           type="button"
-          onClick={onLogout}
+          onClick={() => {
+            stopRun();
+            onLogout();
+          }}
           className="min-h-11 px-2 text-sm text-[var(--mute)]"
         >
           退出
@@ -456,26 +477,31 @@ function VerdictCard({ desk }: { desk: DeskOutput }) {
       </p>
       <div className="mt-4 flex flex-col gap-5">
         {desk.decisions.map((decision) => (
-          <div key={decision.ticker} className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="font-[family-name:var(--font-mono)] text-sm text-[var(--mute)]">
-                {decision.ticker}
-                {decision.structure ? ` · ${decision.structure}` : ""}
-                {decision.delta_bucket ? ` · ${decision.delta_bucket}` : ""}
-              </p>
-              {decision.contract_id ? (
-                <p className="mt-1 break-all font-[family-name:var(--font-mono)] text-sm">
-                  {decision.contract_id}
+          <div key={decision.ticker}>
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="font-[family-name:var(--font-mono)] text-sm text-[var(--mute)]">
+                  {decision.ticker}
+                  {decision.structure ? ` · ${decision.structure}` : ""}
+                  {decision.delta_bucket ? ` · ${decision.delta_bucket}` : ""}
                 </p>
-              ) : null}
-              <p className="mt-2 text-sm leading-relaxed text-[var(--chalk)]">{decision.why}</p>
-              {decision.premium_tradeoff ? (
-                <p className="mt-1 text-xs text-[var(--mute)]">{decision.premium_tradeoff}</p>
-              ) : null}
+                {decision.contract_id ? (
+                  <p className="mt-1 break-all font-[family-name:var(--font-mono)] text-sm">
+                    {decision.contract_id}
+                  </p>
+                ) : null}
+                <p className="mt-2 text-sm leading-relaxed text-[var(--chalk)]">{decision.why}</p>
+                {decision.premium_tradeoff ? (
+                  <p className="mt-1 text-xs text-[var(--mute)]">{decision.premium_tradeoff}</p>
+                ) : null}
+              </div>
+              <span className={`stamp shrink-0 ${decision.action === "OPEN" ? "stamp-open" : "stamp-skip"}`}>
+                {decision.action}
+              </span>
             </div>
-            <span className={`stamp shrink-0 ${decision.action === "OPEN" ? "stamp-open" : "stamp-skip"}`}>
-              {decision.action}
-            </span>
+            {decision.action === "OPEN" && decision.payoff ? (
+              <PayoffChart ticker={decision.ticker} payoff={decision.payoff} />
+            ) : null}
           </div>
         ))}
       </div>
