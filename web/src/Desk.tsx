@@ -432,14 +432,30 @@ function stepTitle(step: TimelineStep): string {
 function Buckets({ snapshot, mode }: { snapshot: TickerSnapshot; mode: "put" | "call" }) {
   const buckets = Object.values(snapshot.buckets);
   const call = mode === "call";
+  const lastPrint = buckets.some((bucket) => bucket.csp.quote_source === "last");
+  const ivNote = buckets.some((bucket) => bucket.csp.iv_source === "implied" || bucket.csp.iv_source === "floored");
+  const otherNotes = (snapshot.notes ?? []).filter(
+    (note) => !note.includes("过期成交价") && !note.includes("Last print") && !note.includes("链上 IV") && !note.includes("Chain IV"),
+  );
   return (
     <div className="mt-3 overflow-x-auto">
       <p className="font-[family-name:var(--font-mono)] text-xs text-[var(--brass)]">
         {snapshot.ticker} 现价 {snapshot.spot.toFixed(2)} · 候选档位
       </p>
-      {snapshot.notes?.length ? (
+      {lastPrint ? (
+        <div className="tape-delay">
+          <p className="tape-delay-kicker">Last print · 非盘口</p>
+          <p>
+            买卖价为空，权利金用最新成交价，价差未知。Yahoo 盘后常见。下单前必须核实现价与买卖盘。
+          </p>
+          {ivNote ? (
+            <p>链上 IV 不可用，Δ 由成交价反推（失败则套下限），只用于选档，不是交易所 Greek。</p>
+          ) : null}
+        </div>
+      ) : null}
+      {otherNotes.length ? (
         <ul className="mt-1 text-[11px] text-[var(--mute)]">
-          {snapshot.notes.map((note) => (
+          {otherNotes.map((note) => (
             <li key={note}>{note}</li>
           ))}
         </ul>
@@ -472,12 +488,21 @@ function BucketRow({ bucket, call }: { bucket: BucketCandidate; call: boolean })
   const spread = bucket.spread
     ? `价差 ${bucket.spread.long.strike} / ${bucket.spread.contracts}张`
     : "无价差";
+  const last = bucket.csp.quote_source === "last";
+  const ivMark =
+    bucket.csp.iv_source === "implied" ? "Δ反推" : bucket.csp.iv_source === "floored" ? "IV下限" : null;
   return (
     <tr className="border-t border-[var(--hairline)]">
       <td className="py-2">{bucket.bucket}</td>
       <td className="py-2">{bucket.csp.contract_id}</td>
-      <td className="py-2">{bucket.csp.delta.toFixed(3)}</td>
-      <td className="py-2">${money(bucket.premium_per_contract)}</td>
+      <td className="py-2">
+        {bucket.csp.delta.toFixed(3)}
+        {ivMark ? <span className="quote-mark">{ivMark}</span> : null}
+      </td>
+      <td className="py-2">
+        ${money(bucket.premium_per_contract)}
+        {last ? <span className="quote-mark">成交价</span> : null}
+      </td>
       <td className="py-2">
         {call ? (
           <>

@@ -29,6 +29,17 @@ class Structure(str, Enum):
     COVERED_CALL = "COVERED_CALL"
 
 
+class QuoteSource(str, Enum):
+    NBBO = "nbbo"
+    LAST = "last"
+
+
+class IvSource(str, Enum):
+    CHAIN = "chain"
+    IMPLIED = "implied"
+    FLOORED = "floored"
+
+
 class EventAction(str, Enum):
     IGNORE = "ignore"
     REDUCE = "reduce"
@@ -57,6 +68,8 @@ class ContractQuote(BaseModel):
     open_interest: int = 0
     volume: int = 0
     spread_pct: float
+    quote_source: QuoteSource = QuoteSource.NBBO
+    iv_source: IvSource = IvSource.CHAIN
 
 
 class SpreadQuote(BaseModel):

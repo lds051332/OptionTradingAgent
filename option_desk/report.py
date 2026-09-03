@@ -34,21 +34,23 @@ def _bucket_rows(snapshot: TickerSnapshot, lang: str) -> list[str]:
             rows.append(f"- **{bucket.value}**: {t(lang, 'no_contract')}")
             continue
         if normalize_lang(lang) == "zh":
+            last_mark = " 成交价" if cand.csp.quote_source.value == "last" else ""
             rows.append(
                 f"- **{bucket.value}** `{cand.csp.contract_id}` "
                 f"{t(lang, 'strike')} {cand.csp.strike:g} "
                 f"Δ={cand.csp.delta:.3f} {t(lang, 'dte')}={cand.csp.dte} "
                 f"{t(lang, 'bid_ask')} {cand.csp.bid:.2f}/{cand.csp.ask:.2f} "
-                f"{t(lang, 'premium')} ${cand.premium_per_contract:.0f}/张 "
+                f"{t(lang, 'premium')} ${cand.premium_per_contract:.0f}/张{last_mark} "
                 f"CSP {cand.csp_contracts} 张 {t(lang, 'assign')} ${cand.assignment_cash:,.0f}；"
                 f"价差 {_spread_text(cand, lang)}"
             )
             continue
+        last_mark = " last-print" if cand.csp.quote_source.value == "last" else ""
         rows.append(
             f"- **{bucket.value}** `{cand.csp.contract_id}` strike {cand.csp.strike:g} "
             f"Δ={cand.csp.delta:.3f} DTE={cand.csp.dte} "
             f"bid/ask {cand.csp.bid:.2f}/{cand.csp.ask:.2f} "
-            f"premium ${cand.premium_per_contract:.0f}/ct "
+            f"premium ${cand.premium_per_contract:.0f}/ct{last_mark} "
             f"CSP {cand.csp_contracts} ct assign ${cand.assignment_cash:,.0f}; "
             f"spread {_spread_text(cand, lang)}"
         )
@@ -182,7 +184,11 @@ def print_run(run: DeskRun, console: Console | None = None) -> None:
                 f"{cand.csp.delta:.3f}",
                 str(cand.csp.dte),
                 f"{cand.csp.bid:.2f}/{cand.csp.ask:.2f}",
-                f"${cand.premium_per_contract:.0f}",
+                (
+                    f"${cand.premium_per_contract:.0f} last"
+                    if cand.csp.quote_source.value == "last"
+                    else f"${cand.premium_per_contract:.0f}"
+                ),
                 str(cand.csp_contracts),
                 f"{cand.assignment_cash:,.0f}",
             )

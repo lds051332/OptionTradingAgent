@@ -13,6 +13,7 @@ from option_desk.schemas import (
     EventMechanism,
     ScoutedEvent,
     TickerSnapshot,
+    DeskAction,
 )
 
 
@@ -138,6 +139,8 @@ def test_screen_error_continues(monkeypatch):
     assert "run_finished" in types
     assert "screen_done" not in types
     assert "calendar_started" not in types
+    assert "scout_search_started" not in types
+    assert "desk_done" in types
 
 
 def test_yahoo_metadata_error_is_retryable_message(monkeypatch):
@@ -153,3 +156,69 @@ def test_yahoo_metadata_error_is_retryable_message(monkeypatch):
     err = next(event for event in events if event.type == "screen_error")
     assert "不一定是本机断网" in err.message
     assert "currentTradingPeriod" not in err.message or "元数据" in err.message
+
+
+def test_empty_buckets_skip_calendar_scout_and_skip(monkeypatch):
+    snap = _snap()
+    empty = snap.model_copy(update={"buckets": {}, "notes": ["No liquid calls in DTE 3-9."]})
+    _patch_pipeline(monkeypatch, empty, [])
+
+    def boom_search(*_a, **_k):
+        raise AssertionError("search_web should not run without candidates")
+
+    def boom_classify(*_a, **_k):
+        raise AssertionError("classify_scout_hits should not run without candidates")
+
+    def boom_llm(*_a, **_k):
+        raise AssertionError("run_desk_llm should not run without candidates")
+
+    monkeypatch.setattr("option_desk.pipeline.search_web", boom_search)
+    monkeypatch.setattr("option_desk.pipeline.classify_scout_hits", boom_classify)
+    monkeypatch.setattr("option_desk.pipeline.run_desk_llm", boom_llm)
+
+    settings = Settings(tickers="NVDA", cash=55000, output_language="zh", desk_mode="put")
+    types = [
+        event.type
+        for event in iter_desk(["NVDA"], as_of=date(2026, 9, 2), settings=settings)
+    ]
+    assert types[0] == "run_started"
+    assert types[-1] == "run_finished"
+    assert "screen_done" in types
+    assert "calendar_started" not in types
+    assert "scout_search_started" not in types
+    assert "scout_done" not in types
+    assert "desk_started" in types
+    assert "desk_done" in types
+
+    run = run_desk(["NVDA"], as_of=date(2026, 9, 2), settings=settings)
+    assert run.desk.used_llm is False
+    assert run.desk.decisions[0].action == DeskAction.SKIP
+    assert "已跳过日历与事件侦察" in run.desk.decisions[0].why
+    assert "无候选档位" in run.desk.portfolio_note
+
+
+def test_mixed_tickers_still_scout_tradeable(monkeypatch):
+    filled = _snap("MSFT")
+    empty = _snap("NVDA").model_copy(update={"buckets": {}})
+    _patch_pipeline(monkeypatch, filled, [])
+
+    def screen(ticker, *_a, **_k):
+        return empty if ticker == "NVDA" else filled
+
+    searched: list[str] = []
+
+    def fake_queries(tickers, *_a, **_k):
+        searched.extend(tickers)
+        return ["q-msft"]
+
+    monkeypatch.setattr("option_desk.pipeline.screen_ticker", screen)
+    monkeypatch.setattr("option_desk.pipeline.scout_queries", fake_queries)
+
+    settings = Settings(tickers="NVDA,MSFT", cash=55000, output_language="zh")
+    types = [
+        event.type
+        for event in iter_desk(["NVDA", "MSFT"], as_of=date(2026, 9, 2), settings=settings)
+    ]
+    assert "scout_search_started" in types
+    assert types.count("calendar_started") == 1
+    assert searched == ["MSFT"]

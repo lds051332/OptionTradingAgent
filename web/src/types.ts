@@ -25,11 +25,14 @@ export type ContractQuote = {
   bid: number;
   ask: number;
   mid: number;
+  last?: number | null;
   iv: number;
   delta: number;
   open_interest: number;
   volume: number;
   spread_pct: number;
+  quote_source?: "nbbo" | "last";
+  iv_source?: "chain" | "implied" | "floored";
 };
 
 export type SpreadQuote = {

@@ -1,4 +1,4 @@
-from option_desk.chain.greeks import abs_put_delta, call_delta, put_delta
+from option_desk.chain.greeks import abs_put_delta, call_delta, call_price, implied_vol, put_delta
 
 
 def test_atm_put_delta_near_half():
@@ -31,3 +31,17 @@ def test_otm_call_delta_less_than_atm():
     otm = call_delta(100.0, 110.0, 7 / 365.0, 0.40, r=0.05)
     assert atm is not None and otm is not None
     assert otm < atm
+
+
+def test_implied_vol_roundtrip_call():
+    t = 7 / 365.0
+    price = call_price(100.0, 103.0, t, 0.40, r=0.04)
+    assert price is not None
+    recovered = implied_vol("C", 100.0, 103.0, t, price, r=0.04)
+    assert recovered is not None
+    assert abs(recovered - 0.40) < 0.01
+
+
+def test_implied_vol_rejects_below_intrinsic():
+    t = 7 / 365.0
+    assert implied_vol("C", 100.0, 90.0, t, 0.10, r=0.04) is None

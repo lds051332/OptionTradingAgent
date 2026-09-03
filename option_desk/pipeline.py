@@ -3,10 +3,10 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import date, datetime, timezone
 
-from option_desk.agents.desk import run_desk_llm
+from option_desk.agents.desk import no_candidate_desk, run_desk_llm
 from option_desk.agents.llm import make_llm
 from option_desk.calendar.gates import evaluate_calendar
-from option_desk.chain.screener import screen_ticker
+from option_desk.chain.screener import screen_ticker, uses_last_print
 from option_desk.config import Settings
 from option_desk.events.scout import classify_scout_hits, scout_queries
 from option_desk.events.search import search_web
@@ -92,12 +92,22 @@ def iter_desk(
                     message=msg,
                 )
                 continue
+            last_note = ""
+            if uses_last_print(snap.buckets):
+                last_note = (
+                    "（权利金为成交价，非盘口）"
+                    if normalize_lang(lang) == "zh"
+                    else " (last print, not NBBO)"
+                )
             yield stream_event(
                 "screen_done",
                 ticker=ticker,
-                message=f"{ticker} 现价 {snap.spot:.2f}，筛出 {len(snap.buckets)} 档候选",
+                message=f"{ticker} 现价 {snap.spot:.2f}，筛出 {len(snap.buckets)} 档候选{last_note}",
                 snapshot=_dump(snap),
             )
+            if not snap.buckets:
+                snapshots.append(snap)
+                continue
             yield stream_event(
                 "calendar_started",
                 ticker=ticker,
@@ -131,35 +141,50 @@ def iter_desk(
                 calendar=_dump(cal),
             )
 
-        yield stream_event("scout_search_started", message="正在搜索日历外突发风险…")
-        hits = []
-        for query in scout_queries(tickers, as_of):
-            batch = search_web(query, settings.tavily_api_key, limit=4)
-            hits.extend(batch)
+        tradeable = [snap for snap in snapshots if snap.buckets]
+        events = []
+        if not tradeable:
             yield stream_event(
-                "scout_hits",
-                message=f"已收集 {len(hits)} 条搜索结果",
-                query=query,
-                hits=[h.as_dict() for h in hits],
+                "desk_started",
+                message="没有候选档位，跳过日历与侦察，直接 SKIP",
+            )
+            desk = no_candidate_desk(snapshots, lang, mode=mode.value)
+            yield stream_event(
+                "desk_done",
+                message="终审完成：无合约可开，全部 SKIP",
+                desk=_dump(desk),
+            )
+        else:
+            yield stream_event("scout_search_started", message="正在搜索日历外突发风险…")
+            hits = []
+            scout_names = [snap.ticker for snap in tradeable]
+            for query in scout_queries(scout_names, as_of):
+                batch = search_web(query, settings.tavily_api_key, limit=4)
+                hits.extend(batch)
+                yield stream_event(
+                    "scout_hits",
+                    message=f"已收集 {len(hits)} 条搜索结果",
+                    query=query,
+                    hits=[h.as_dict() for h in hits],
+                )
+
+            yield stream_event("scout_llm_started", message="正在用 LLM 分类事件…")
+            events, scout_warnings = classify_scout_hits(scout_names, as_of, settings, llm, hits)
+            warnings.extend(scout_warnings)
+            yield stream_event(
+                "scout_done",
+                message=f"侦察完成，{len(events)} 条事件" if events else "侦察完成，无需要跟进的事件",
+                events=[_dump(e) for e in events],
+                warnings=scout_warnings,
             )
 
-        yield stream_event("scout_llm_started", message="正在用 LLM 分类事件…")
-        events, scout_warnings = classify_scout_hits(tickers, as_of, settings, llm, hits)
-        warnings.extend(scout_warnings)
-        yield stream_event(
-            "scout_done",
-            message=f"侦察完成，{len(events)} 条事件" if events else "侦察完成，无需要跟进的事件",
-            events=[_dump(e) for e in events],
-            warnings=scout_warnings,
-        )
-
-        yield stream_event("desk_started", message="终审中，正在候选档位里选约…")
-        desk = run_desk_llm(snapshots, events, settings.cash, settings, llm)
-        yield stream_event(
-            "desk_done",
-            message="终审完成",
-            desk=_dump(desk),
-        )
+            yield stream_event("desk_started", message="终审中，正在候选档位里选约…")
+            desk = run_desk_llm(snapshots, events, settings.cash, settings, llm)
+            yield stream_event(
+                "desk_done",
+                message="终审完成",
+                desk=_dump(desk),
+            )
 
         fetched_at = snapshots[0].fetched_at if snapshots else datetime.now(timezone.utc)
         run = DeskRun(

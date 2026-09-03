@@ -25,6 +25,7 @@ Universe is only the tickers in the snapshot. Strategy: sell 3-9 DTE puts, cash-
 Delta 0.20 is the default home base (standard). conservative (~0.10-0.12) is allowed to buy gap cushion.
 You MUST pick contract_id from the provided delta buckets. Never invent a strike or expiry.
 In Chinese user-facing text, call those buckets 档位, never 梯子 or 阶梯.
+If a bucket is marked quote=last, premium is a last trade not bid/ask mid — say so in why and tell the user to confirm live NBBO before sending an order.
 
 Hard rules:
 - If calendar.hard_skip is true (earnings or FOMC in the holding window): action=SKIP. Do not open a smaller-delta put instead.
@@ -47,6 +48,7 @@ conservative (~0.10-0.12) is further OTM — higher strike, more room for the st
 You MUST pick contract_id from the provided delta buckets. Never invent a strike or expiry.
 structure must be COVERED_CALL. Never CSP or BULL_PUT_SPREAD.
 In Chinese user-facing text, call those buckets 档位, never 梯子 or 阶梯.
+If a bucket is marked quote=last, premium is a last trade not bid/ask mid — say so in why and tell the user to confirm live NBBO before sending an order.
 
 Hard rules:
 - If calendar.hard_skip is true (earnings or FOMC in the holding window): action=SKIP. Do not open a smaller-delta call instead.
@@ -74,11 +76,16 @@ def _bucket_brief(snapshot: TickerSnapshot) -> str:
         qty_label = "CC_qty" if snapshot.mode is DeskMode.CALL else "CSP_qty"
         assign_label = "assign_proceeds" if snapshot.mode is DeskMode.CALL else "assign"
         spread_bit = f" spread[{spread}]" if snapshot.mode is not DeskMode.CALL else ""
+        quote_bit = (
+            f" quote={cand.csp.quote_source.value} iv={cand.csp.iv_source.value}"
+            if cand.csp.quote_source.value != "nbbo" or cand.csp.iv_source.value != "chain"
+            else ""
+        )
         lines.append(
             f"  {bucket.value}: id={cand.csp.contract_id} strike={cand.csp.strike:g} "
             f"delta={cand.csp.delta:.3f} dte={cand.csp.dte} mid={cand.csp.mid:.2f} "
             f"premium=${cand.premium_per_contract:.0f}/ct {qty_label}={cand.csp_contracts} "
-            f"{assign_label}=${cand.assignment_cash:.0f}{spread_bit}"
+            f"{assign_label}=${cand.assignment_cash:.0f}{spread_bit}{quote_bit}"
         )
     if not lines:
         lines.append("  (no liquid candidates)")
@@ -141,6 +148,7 @@ def snapshot_prompt(
             f"  hard_skip={cal.hard_skip} reasons={hard}\n"
             f"  soft_macro={soft}\n"
             f"  premium_tradeoff={_premium_tradeoff(snap)}\n"
+            f"  notes={'; '.join(snap.notes) if snap.notes else 'none'}\n"
             f"  delta buckets:\n{_bucket_brief(snap)}\n"
             f"  events:\n" + ("\n".join(event_lines) if event_lines else "    none")
         )
@@ -151,8 +159,50 @@ def _L(lang: str, en: str, zh: str) -> str:
     return zh if normalize_lang(lang) == "zh" else en
 
 
+def _last_print_why(cand, lang: str) -> str:
+    if cand.csp.quote_source.value != "last":
+        return ""
+    return _L(
+        lang,
+        " Premium is last trade, not NBBO — confirm live quotes before sending an order.",
+        " 权利金为最新成交价而非盘口，下单前必须核实现价与买卖盘。",
+    )
+
+
 def _call_net_exit(cand) -> float:
     return cand.csp.strike + cand.csp.mid
+
+
+def no_candidate_desk(
+    snapshots: list[TickerSnapshot],
+    lang: str = "en",
+    *,
+    mode: str = "put",
+) -> DeskOutput:
+    """SKIP every name when no delta bucket exists. Does not use calendar, scout, or an LLM."""
+    call = str(mode).lower() == "call"
+    decisions: list[TickerDecision] = []
+    for snap in snapshots:
+        why = _L(
+            lang,
+            "No liquid call in either delta bucket." if call else "No liquid put in either delta bucket.",
+            "两档都没有流动性足够的 call。" if call else "两档都没有流动性足够的 put。",
+        )
+        if snap.notes:
+            why = f"{why} {' '.join(snap.notes)}"
+        why = f"{why}{_L(lang, ' Skipped calendar and event scout.', ' 已跳过日历与事件侦察。')}"
+        decisions.append(
+            TickerDecision(ticker=snap.ticker, action=DeskAction.SKIP, why=why)
+        )
+    return DeskOutput(
+        decisions=decisions,
+        portfolio_note=_L(
+            lang,
+            "No candidates; skipped calendar, scout, and model desk.",
+            "无候选档位，已跳过日历、侦察与模型终审。",
+        ),
+        used_llm=False,
+    )
 
 
 def heuristic_call_desk(
@@ -237,6 +287,7 @@ def heuristic_call_desk(
                 f"{why} Called away would realize a loss vs cost basis.",
                 f"{why} 若被指派，相对成本价会锁定亏损。",
             )
+        why = f"{why}{_last_print_why(bucket, lang)}"
         decisions.append(
             TickerDecision(
                 ticker=snap.ticker,
@@ -354,6 +405,7 @@ def heuristic_desk(
                 "Soft macro or reduce event → conservative (or spread).",
                 "有软宏观或降风险事件，改用保守档（或价差）。",
             )
+        why = f"{why}{_last_print_why(bucket, lang)}"
         decisions.append(
             TickerDecision(
                 ticker=snap.ticker,

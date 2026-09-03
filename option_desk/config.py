@@ -166,6 +166,8 @@ class Settings(BaseSettings):
     standard_delta_band: float = 0.06
     max_spread_pct: float = 0.20
     min_open_interest: int = 10
+    iv_floor: float = 0.10
+    max_last_age_days: int = 5
     spread_width: float = 10.0
     max_spread_loss: float = 5000
     risk_free_rate: float = 0.04

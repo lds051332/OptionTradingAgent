@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 
-from option_desk.agents.desk import enforce_desk_rules, heuristic_desk
+from option_desk.agents.desk import enforce_desk_rules, heuristic_desk, no_candidate_desk
 from option_desk.events.scout import _normalize
 from option_desk.schemas import (
     BucketCandidate,
@@ -16,6 +16,7 @@ from option_desk.schemas import (
     Structure,
     TickerDecision,
     TickerSnapshot,
+    QuoteSource,
 )
 
 
@@ -110,6 +111,28 @@ def test_heuristic_opens_standard_when_quiet():
     assert out.decisions[0].action == DeskAction.OPEN
     assert out.decisions[0].delta_bucket == DeltaBucket.STANDARD
     assert out.decisions[0].contract_id == "NVDA-2026-09-11-P-160"
+
+
+def test_heuristic_mentions_last_print():
+    snap = _snap("NVDA")
+    bucket = snap.buckets[DeltaBucket.STANDARD]
+    csp = bucket.csp.model_copy(update={"quote_source": QuoteSource.LAST})
+    snap = snap.model_copy(
+        update={"buckets": {DeltaBucket.STANDARD: bucket.model_copy(update={"csp": csp})}}
+    )
+    out = heuristic_desk([snap], events=[], cash=55000, lang="zh")
+    assert out.decisions[0].action == DeskAction.OPEN
+    assert "非盘口" in out.decisions[0].why
+
+
+def test_no_candidate_desk_skips_without_llm():
+    snap = _snap("NVDA")
+    snap = snap.model_copy(update={"buckets": {}, "notes": ["No liquid puts in DTE 3-9."]})
+    out = no_candidate_desk([snap], lang="zh", mode="put")
+    assert out.used_llm is False
+    assert out.decisions[0].action == DeskAction.SKIP
+    assert "已跳过日历与事件侦察" in out.decisions[0].why
+    assert "No liquid puts" in out.decisions[0].why
 
 
 def test_undated_geopolitics_forced_ignore():

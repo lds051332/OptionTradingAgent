@@ -7,7 +7,7 @@ from typing import Callable, TypeVar
 import pandas as pd
 import yfinance as yf
 
-from option_desk.chain.greeks import abs_put_delta, call_delta, years_from_dte
+from option_desk.chain.greeks import abs_put_delta, call_delta, implied_vol, years_from_dte
 from option_desk.config import Settings
 from option_desk.schemas import (
     BucketCandidate,
@@ -15,6 +15,8 @@ from option_desk.schemas import (
     ContractQuote,
     DeltaBucket,
     DeskMode,
+    IvSource,
+    QuoteSource,
     SpreadQuote,
     TickerSnapshot,
 )
@@ -53,6 +55,127 @@ def _spread_pct(bid: float, ask: float, mid: float) -> float:
     if mid <= 0 or ask <= 0:
         return 1.0
     return max(ask - bid, 0) / mid
+
+
+def _has_nbbo(bid: float, ask: float) -> bool:
+    return bid > 0 and ask > 0
+
+
+def _trade_date(value) -> date | None:
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        if hasattr(value, "date"):
+            got = value.date()
+            if isinstance(got, datetime):
+                return got.date()
+            if isinstance(got, date):
+                return got
+        return pd.Timestamp(value).date()
+    except (TypeError, ValueError):
+        return None
+
+
+def _last_print_too_old(row: pd.Series, as_of: date, max_age_days: int) -> bool:
+    traded = _trade_date(row.get("lastTradeDate"))
+    if traded is None:
+        return False
+    return (as_of - traded).days > max_age_days
+
+
+def _resolve_iv(
+    chain_iv: float,
+    price: float,
+    spot: float,
+    strike: float,
+    t_years: float,
+    right: str,
+    settings: Settings,
+    prefer_implied: bool,
+) -> tuple[float, IvSource] | None:
+    floor = settings.iv_floor
+    chain_ok = chain_iv >= floor
+    if prefer_implied or not chain_ok:
+        implied = implied_vol(
+            right,
+            spot,
+            strike,
+            t_years,
+            price,
+            r=settings.risk_free_rate,
+            q=settings.dividend_yield,
+        )
+        if implied is not None:
+            return implied, IvSource.IMPLIED
+        if chain_ok:
+            return chain_iv, IvSource.CHAIN
+        if chain_iv > 0:
+            return max(chain_iv, floor), IvSource.FLOORED
+        return floor, IvSource.FLOORED
+    return chain_iv, IvSource.CHAIN
+
+
+def _quality_notes(
+    buckets: dict[DeltaBucket, BucketCandidate],
+    settings: Settings,
+    lang: str,
+) -> list[str]:
+    quotes: list[ContractQuote] = []
+    for cand in buckets.values():
+        quotes.append(cand.csp)
+        if cand.spread:
+            quotes.append(cand.spread.long)
+    if not quotes:
+        return []
+    zh = str(lang).lower().startswith("zh")
+    notes: list[str] = []
+    if any(q.quote_source is QuoteSource.LAST for q in quotes):
+        if zh:
+            notes.append(
+                "过期成交价，不是盘口：买卖价为空，权利金用最新成交，价差未知。"
+                "Yahoo 盘后常见。下单前必须核实现价与买卖盘。"
+            )
+        else:
+            notes.append(
+                "Last print, not NBBO: bid/ask missing, premium is last trade, spread unknown. "
+                "Common on Yahoo after hours. Confirm live quotes before sending an order."
+            )
+    if any(q.iv_source is IvSource.IMPLIED for q in quotes):
+        if zh:
+            notes.append(
+                "链上 IV 不可用，Delta 由成交价反推，只用于选档，不是交易所 Greek。"
+            )
+        else:
+            notes.append(
+                "Chain IV unusable; Delta is implied from the last print for screening only, "
+                "not an exchange Greek."
+            )
+    elif any(q.iv_source is IvSource.FLOORED for q in quotes):
+        floor_pct = f"{settings.iv_floor:.0%}"
+        if zh:
+            notes.append(
+                f"链上 IV 过低且无法从成交价反推，已套 {floor_pct} 下限。"
+                "Delta 偏差可能很大，仅供参考。"
+            )
+        else:
+            notes.append(
+                f"Chain IV too low to invert from last; floored at {floor_pct}. "
+                "Delta may be far off — screening only."
+            )
+    return notes
+
+
+def uses_last_print(buckets: dict[DeltaBucket, BucketCandidate]) -> bool:
+    return any(cand.csp.quote_source is QuoteSource.LAST for cand in buckets.values())
 
 
 def _contract_id(ticker: str, expiry: date, strike: float, right: str = "P") -> str:
@@ -119,26 +242,52 @@ def _row_quote(
     spot: float,
     settings: Settings,
     right: str = "P",
+    as_of: date | None = None,
 ) -> ContractQuote | None:
     strike = _cell_float(row.get("strike"))
     bid = _cell_float(row.get("bid"))
     ask = _cell_float(row.get("ask"))
     last_raw = _cell_float(row.get("lastPrice"))
     last = last_raw or None
-    iv = _cell_float(row.get("impliedVolatility"))
+    chain_iv = _cell_float(row.get("impliedVolatility"))
     oi = _cell_int(row.get("openInterest"))
     volume = _cell_int(row.get("volume"))
-    if strike <= 0 or iv <= 0:
+    if strike <= 0:
         return None
-    mid = _mid(bid, ask, last)
+    live = _has_nbbo(bid, ask)
+    if live:
+        mid = _mid(bid, ask, last)
+        quote_source = QuoteSource.NBBO
+        spread_pct = _spread_pct(bid, ask, mid)
+        if spread_pct > settings.max_spread_pct:
+            return None
+    else:
+        if last is None or last <= 0:
+            return None
+        screen_day = as_of or (expiry - timedelta(days=dte))
+        if _last_print_too_old(row, screen_day, settings.max_last_age_days):
+            return None
+        mid = last
+        quote_source = QuoteSource.LAST
+        spread_pct = 1.0
     if mid <= 0:
-        return None
-    spread_pct = _spread_pct(bid, ask, mid)
-    if spread_pct > settings.max_spread_pct:
         return None
     if oi < settings.min_open_interest and volume < settings.min_open_interest:
         return None
     t_years = years_from_dte(dte)
+    resolved = _resolve_iv(
+        chain_iv,
+        mid,
+        spot,
+        strike,
+        t_years,
+        right,
+        settings,
+        prefer_implied=quote_source is QuoteSource.LAST,
+    )
+    if resolved is None:
+        return None
+    iv, iv_source = resolved
     if right.upper() == "C":
         delta = call_delta(
             spot,
@@ -169,11 +318,13 @@ def _row_quote(
         ask=ask,
         mid=round(mid, 4),
         last=last,
-        iv=iv,
+        iv=round(iv, 4),
         delta=round(delta, 4),
         open_interest=oi,
         volume=volume,
         spread_pct=round(spread_pct, 4),
+        quote_source=quote_source,
+        iv_source=iv_source,
     )
 
 
@@ -201,7 +352,9 @@ def load_option_quotes(
         if frame is None or frame.empty:
             continue
         for _, row in frame.iterrows():
-            quote = _row_quote(ticker, expiry, dte, row, spot, settings, right=flag)
+            quote = _row_quote(
+                ticker, expiry, dte, row, spot, settings, right=flag, as_of=as_of
+            )
             if quote is not None:
                 quotes.append(quote)
     return quotes
@@ -233,7 +386,16 @@ def select_bucket(
     eligible = [q for q in quotes if abs(q.delta - target) <= band]
     if not eligible:
         return None
-    return min(eligible, key=lambda q: (abs(q.delta - target), q.spread_pct, -q.open_interest))
+    return min(
+        eligible,
+        key=lambda q: (
+            abs(q.delta - target),
+            0 if q.quote_source is QuoteSource.NBBO else 1,
+            q.spread_pct,
+            -q.open_interest,
+            -q.volume,
+        ),
+    )
 
 
 def find_long_put(
@@ -370,6 +532,7 @@ def screen_ticker(ticker: str, as_of: date, settings: Settings) -> TickerSnapsho
         )
     if not quotes:
         notes.append(empty_msg)
+    notes.extend(_quality_notes(buckets, settings, str(settings.output_language)))
     if buckets:
         holding_end = max(c.csp.expiry for c in buckets.values())
     else:

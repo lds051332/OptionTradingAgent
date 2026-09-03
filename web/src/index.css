@@ -356,6 +356,42 @@ input:focus-visible {
   color: var(--mute);
 }
 
+.tape-delay {
+  margin-top: 0.7rem;
+  padding: 0.55rem 0.7rem 0.65rem;
+  border: 1px dashed color-mix(in srgb, var(--skip) 70%, var(--hairline));
+  background: color-mix(in srgb, var(--skip) 9%, var(--card));
+}
+
+.tape-delay-kicker {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--skip);
+}
+
+.tape-delay p + p {
+  margin: 0.35rem 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--chalk);
+}
+
+.quote-mark {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.08rem 0.32rem;
+  border: 1px solid var(--skip);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--skip);
+  vertical-align: 0.08em;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pulse-dot,
   .work-reel-track::after,
