@@ -11,3 +11,19 @@ def test_delta_scales_conservative_bucket():
     assert overlay.output_language == "zh"
     assert base.standard_delta == 0.20
     assert base.cash == 55000
+
+
+def test_call_overrides_shares_and_basis():
+    base = Settings(shares=100, cost_basis=0, desk_mode="put")
+    overlay = apply_run_overrides(
+        base,
+        desk_mode="call",
+        shares=300,
+        cost_basis=172.4,
+        delta=0.18,
+    )
+    assert overlay.desk_mode == "call"
+    assert overlay.shares == 300
+    assert overlay.cost_basis == 172.4
+    assert overlay.standard_delta == 0.18
+    assert base.desk_mode == "put"

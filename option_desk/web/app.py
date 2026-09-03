@@ -5,7 +5,7 @@ import os
 import re
 import threading
 from datetime import date
-from typing import AsyncIterator
+from typing import AsyncIterator, Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
@@ -16,6 +16,8 @@ from option_desk.config import (
     MAX_RUN_DELTA,
     MAX_RUN_TICKERS,
     MIN_RUN_DELTA,
+    MIN_RUN_SHARES,
+    MAX_RUN_SHARES,
     Settings,
     apply_run_overrides,
     get_settings,
@@ -43,6 +45,9 @@ class RunBody(BaseModel):
     tickers: list[str] = Field(default_factory=lambda: ["NVDA", "MSFT"])
     delta: float = 0.20
     cash: float = 55000
+    mode: Literal["put", "call"] = "put"
+    shares: float | None = None
+    cost_basis: float | None = None
 
 
 def _normalize_tickers(raw: list[str]) -> list[str]:
@@ -62,16 +67,29 @@ def _normalize_tickers(raw: list[str]) -> list[str]:
     return seen
 
 
-def _validate_run(body: RunBody) -> tuple[list[str], float, float]:
+def _validate_run(body: RunBody) -> tuple[list[str], float, float, str, float, float]:
     tickers = _normalize_tickers(body.tickers)
     if not MIN_RUN_DELTA <= body.delta <= MAX_RUN_DELTA:
         raise HTTPException(
             status_code=422,
             detail=f"Delta 须在 {MIN_RUN_DELTA}–{MAX_RUN_DELTA} 之间",
         )
+    mode = body.mode
+    if mode == "call":
+        shares = float(body.shares if body.shares is not None else 0)
+        if shares < MIN_RUN_SHARES or shares > MAX_RUN_SHARES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"持股数量须在 {MIN_RUN_SHARES}–{MAX_RUN_SHARES} 股",
+            )
+        cost_basis = float(body.cost_basis if body.cost_basis is not None else 0)
+        if cost_basis <= 0 or cost_basis > 1_000_000:
+            raise HTTPException(status_code=422, detail="成本价须大于 0 且不超过 $1,000,000")
+        cash = float(body.cash)
+        return tickers, float(body.delta), cash, mode, shares, cost_basis
     if body.cash < 1000 or body.cash > 10_000_000:
         raise HTTPException(status_code=422, detail="本金须在 $1,000–$10,000,000")
-    return tickers, float(body.delta), float(body.cash)
+    return tickers, float(body.delta), float(body.cash), "put", 100.0, 0.0
 
 
 def _defaults(settings: Settings | None = None) -> dict:
@@ -81,6 +99,8 @@ def _defaults(settings: Settings | None = None) -> dict:
         "tickers": settings.ticker_list(),
         "delta": settings.standard_delta,
         "cash": settings.cash,
+        "shares": settings.shares,
+        "cost_basis": settings.cost_basis or None,
     }
 
 
@@ -100,6 +120,10 @@ async def _iter_sse(
     tickers: list[str],
     delta: float,
     cash: float,
+    *,
+    mode: str = "put",
+    shares: float = 100,
+    cost_basis: float = 0,
 ) -> AsyncIterator[bytes]:
     queue: asyncio.Queue[StreamEvent | None | BaseException] = asyncio.Queue()
     loop = asyncio.get_running_loop()
@@ -113,6 +137,9 @@ async def _iter_sse(
             delta=delta,
             cash=cash,
             language="zh",
+            desk_mode=mode,
+            shares=shares if mode == "call" else None,
+            cost_basis=cost_basis if mode == "call" else None,
         )
 
         def push(item: StreamEvent | None | BaseException) -> bool:
@@ -174,12 +201,19 @@ def create_app() -> FastAPI:
     @app.post("/api/runs")
     async def create_run(body: RunBody, request: Request) -> StreamingResponse:
         require_session(request)
-        tickers, delta, cash = _validate_run(body)
+        tickers, delta, cash, mode, shares, cost_basis = _validate_run(body)
         if not _RUN_LOCK.acquire(blocking=False):
             raise HTTPException(status_code=409, detail="已有一轮分析在进行")
 
         async def stream() -> AsyncIterator[bytes]:
-            agen = _iter_sse(tickers, delta, cash)
+            agen = _iter_sse(
+                tickers,
+                delta,
+                cash,
+                mode=mode,
+                shares=shares,
+                cost_basis=cost_basis,
+            )
             try:
                 async for chunk in agen:
                     yield chunk

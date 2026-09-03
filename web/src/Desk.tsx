@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { startRun } from "./api";
+import { BrandLockup } from "./Brand";
 import { PayoffChart } from "./PayoffChart";
 import { TickerCombobox, normalizeSymbol } from "./TickerCombobox";
 import type {
@@ -16,8 +17,23 @@ import type {
 
 type Props = {
   defaults: Defaults;
+  mode: "put" | "call";
+  onBack: () => void;
   onLogout: () => void;
 };
+
+const COPY = {
+  put: {
+    title: "卖 Put 决策台",
+    hint: "填好标的、Delta 和本金后开始。",
+    disclaimer: "不构成投资建议。下单前请核对成交价与被指派所需现金。",
+  },
+  call: {
+    title: "卖 Call 决策台",
+    hint: "填好标的、Delta、持股数量和成本价后开始。",
+    disclaimer: "不构成投资建议。下单前请核对成交价；被指派即按行权价卖出持股。",
+  },
+} as const;
 
 function money(value: number): string {
   return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
@@ -142,10 +158,13 @@ function applyEvent(steps: TimelineStep[], event: StreamEvent): TimelineStep[] {
   }
 }
 
-export function Desk({ defaults, onLogout }: Props) {
+export function Desk({ defaults, mode, onBack, onLogout }: Props) {
+  const copy = COPY[mode];
   const [ticker, setTicker] = useState(defaults.tickers[0] ?? "");
   const [delta, setDelta] = useState(defaults.delta);
   const [cash, setCash] = useState(defaults.cash);
+  const [shares, setShares] = useState(defaults.shares || 100);
+  const [costBasis, setCostBasis] = useState(defaults.cost_basis || 0);
   const [configOpen, setConfigOpen] = useState(true);
   const [running, setRunning] = useState(false);
   const [steps, setSteps] = useState<TimelineStep[]>([]);
@@ -162,10 +181,13 @@ export function Desk({ defaults, onLogout }: Props) {
     abortRef.current = null;
   }
 
-  const summary = useMemo(
-    () => `${ticker || "未选标的"} · Δ${delta.toFixed(2)} · ${compactCash(cash)}`,
-    [ticker, delta, cash],
-  );
+  const summary = useMemo(() => {
+    if (mode === "call") {
+      const basis = costBasis > 0 ? `成本 $${costBasis.toFixed(2)}` : "未填成本";
+      return `${ticker || "未选标的"} · Δ${delta.toFixed(2)} · ${shares}股 · ${basis}`;
+    }
+    return `${ticker || "未选标的"} · Δ${delta.toFixed(2)} · ${compactCash(cash)}`;
+  }, [mode, ticker, delta, cash, shares, costBasis]);
 
   const verdict = steps.find((step) => step.id === "desk" && step.status === "done")?.desk;
 
@@ -174,17 +196,26 @@ export function Desk({ defaults, onLogout }: Props) {
     const raw = String(new FormData(event.currentTarget).get("ticker") ?? ticker);
     const symbol = normalizeSymbol(raw);
     if (running || !symbol) return;
+    if (mode === "call" && (shares < 100 || costBasis <= 0)) return;
     setTicker(symbol);
     setRunning(true);
     setError(null);
     setSteps([]);
     setConfigOpen(false);
-    setUserPrompt(`分析 ${symbol} · Δ ${delta.toFixed(2)} · 本金 $${money(cash)}`);
+    setUserPrompt(
+      mode === "call"
+        ? `分析 ${symbol} · Δ ${delta.toFixed(2)} · ${shares}股 · 成本 $${costBasis.toFixed(2)}`
+        : `分析 ${symbol} · Δ ${delta.toFixed(2)} · 本金 $${money(cash)}`,
+    );
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      for await (const item of startRun({ tickers: [symbol], delta, cash }, { signal: controller.signal })) {
+      const body =
+        mode === "call"
+          ? { tickers: [symbol], delta, mode: "call" as const, shares, cost_basis: costBasis }
+          : { tickers: [symbol], delta, cash, mode: "put" as const };
+      for await (const item of startRun(body, { signal: controller.signal })) {
         setSteps((current) => applyEvent(current, item));
         if (item.type === "run_error") setError(item.message);
       }
@@ -205,25 +236,30 @@ export function Desk({ defaults, onLogout }: Props) {
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-2xl flex-col px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))]">
-      <header className="mb-4 flex items-end justify-between gap-3">
-        <div>
-          <p className="font-[family-name:var(--font-mono)] text-[11px] tracking-[0.28em] text-[var(--brass)] uppercase">
-            Option Desk
-          </p>
-          <h1 className="font-[family-name:var(--font-display)] text-[1.85rem] leading-none text-[var(--chalk)]">
-            卖 Put 决策台
-          </h1>
+      <header className="mb-4 flex items-center justify-between gap-3">
+        <BrandLockup title={copy.title} />
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              stopRun();
+              onBack();
+            }}
+            className="min-h-11 px-2 text-sm text-[var(--mute)]"
+          >
+            返回
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              stopRun();
+              onLogout();
+            }}
+            className="min-h-11 px-2 text-sm text-[var(--mute)]"
+          >
+            退出
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            stopRun();
-            onLogout();
-          }}
-          className="min-h-11 px-2 text-sm text-[var(--mute)]"
-        >
-          退出
-        </button>
       </header>
 
       <section className="ticket mb-5 px-4 py-3 pl-7">
@@ -256,21 +292,49 @@ export function Desk({ defaults, onLogout }: Props) {
                   className="mt-2 min-h-11 w-full rounded-sm border border-[var(--hairline)] bg-[var(--night)] px-3 font-[family-name:var(--font-mono)]"
                 />
               </label>
-              <label className="block">
-                <span className="text-xs tracking-wide text-[var(--mute)] uppercase">本金 USD</span>
+              {mode === "call" ? (
+                <label className="block">
+                  <span className="text-xs tracking-wide text-[var(--mute)] uppercase">持股数量</span>
+                  <input
+                    type="number"
+                    min={100}
+                    step={1}
+                    value={shares}
+                    onChange={(e) => setShares(Number(e.target.value))}
+                    className="mt-2 min-h-11 w-full rounded-sm border border-[var(--hairline)] bg-[var(--night)] px-3 font-[family-name:var(--font-mono)]"
+                  />
+                </label>
+              ) : (
+                <label className="block">
+                  <span className="text-xs tracking-wide text-[var(--mute)] uppercase">本金 USD</span>
+                  <input
+                    type="number"
+                    min={1000}
+                    step={1000}
+                    value={cash}
+                    onChange={(e) => setCash(Number(e.target.value))}
+                    className="mt-2 min-h-11 w-full rounded-sm border border-[var(--hairline)] bg-[var(--night)] px-3 font-[family-name:var(--font-mono)]"
+                  />
+                </label>
+              )}
+            </div>
+            {mode === "call" ? (
+              <label className="mt-3 block">
+                <span className="text-xs tracking-wide text-[var(--mute)] uppercase">成本价 USD</span>
                 <input
                   type="number"
-                  min={1000}
-                  step={1000}
-                  value={cash}
-                  onChange={(e) => setCash(Number(e.target.value))}
+                  min={0.01}
+                  step={0.01}
+                  value={costBasis || ""}
+                  onChange={(e) => setCostBasis(Number(e.target.value))}
+                  placeholder="买入均价"
                   className="mt-2 min-h-11 w-full rounded-sm border border-[var(--hairline)] bg-[var(--night)] px-3 font-[family-name:var(--font-mono)]"
                 />
               </label>
-            </div>
+            ) : null}
             <button
               type="submit"
-              disabled={running || !ticker}
+              disabled={running || !ticker || (mode === "call" && (shares < 100 || costBasis <= 0))}
               className="mt-4 min-h-11 w-full rounded-sm bg-[var(--brass)] font-semibold text-[var(--night)] disabled:opacity-50"
             >
               {running ? "分析进行中…" : "开始分析"}
@@ -286,19 +350,19 @@ export function Desk({ defaults, onLogout }: Props) {
           </div>
         ) : (
           <p className="px-1 text-sm leading-relaxed text-[var(--mute)]">
-            填好标的、Delta 和本金后开始。
+            {copy.hint}
           </p>
         )}
 
         {steps.map((step) => (
-          <StepCard key={step.id} step={step} />
+          <StepCard key={step.id} step={step} mode={mode} />
         ))}
 
         {error && !steps.some((step) => step.type === "error") ? (
           <p className="text-sm text-[var(--skip)]">{error}</p>
         ) : null}
 
-        {verdict ? <VerdictCard desk={verdict} /> : null}
+        {verdict ? <VerdictCard desk={verdict} mode={mode} /> : null}
       </div>
     </div>
   );
@@ -327,7 +391,7 @@ function WorkingReel({ label }: { label: string }) {
   );
 }
 
-function StepCard({ step }: { step: TimelineStep }) {
+function StepCard({ step, mode }: { step: TimelineStep; mode: "put" | "call" }) {
   const live = step.status === "running";
   return (
     <article className={`ticket px-4 py-4 pl-7 ${live ? "ticket-live" : ""}`}>
@@ -341,7 +405,7 @@ function StepCard({ step }: { step: TimelineStep }) {
         ) : null}
       </header>
       {live ? <WorkingReel label={step.message} /> : <p className="text-sm text-[var(--mute)]">{step.message}</p>}
-      {step.snapshot ? <Buckets snapshot={step.snapshot} /> : null}
+      {step.snapshot ? <Buckets snapshot={step.snapshot} mode={mode} /> : null}
       {!live && step.calendar ? <CalendarBlock calendar={step.calendar} /> : null}
       {step.hits && step.hits.length > 0 ? <Hits hits={step.hits} /> : null}
       {!live && step.events ? <Events events={step.events} /> : null}
@@ -365,15 +429,23 @@ function stepTitle(step: TimelineStep): string {
   return step.type;
 }
 
-function Buckets({ snapshot }: { snapshot: TickerSnapshot }) {
+function Buckets({ snapshot, mode }: { snapshot: TickerSnapshot; mode: "put" | "call" }) {
   const buckets = Object.values(snapshot.buckets);
+  const call = mode === "call";
   return (
     <div className="mt-3 overflow-x-auto">
       <p className="font-[family-name:var(--font-mono)] text-xs text-[var(--brass)]">
         {snapshot.ticker} 现价 {snapshot.spot.toFixed(2)} · 候选档位
       </p>
+      {snapshot.notes?.length ? (
+        <ul className="mt-1 text-[11px] text-[var(--mute)]">
+          {snapshot.notes.map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </ul>
+      ) : null}
       {buckets.length === 0 ? (
-        <p className="mt-2 text-sm text-[var(--mute)]">两档都没有合格合约。</p>
+        <p className="mt-2 text-sm text-[var(--mute)]">{call ? "两档都没有合格 call。" : "两档都没有合格合约。"}</p>
       ) : (
         <table className="mt-2 w-full min-w-[28rem] text-left text-xs">
           <thead className="text-[var(--mute)]">
@@ -382,12 +454,12 @@ function Buckets({ snapshot }: { snapshot: TickerSnapshot }) {
               <th className="py-1 font-medium">合约</th>
               <th className="py-1 font-medium">Δ</th>
               <th className="py-1 font-medium">权利金</th>
-              <th className="py-1 font-medium">CSP</th>
+              <th className="py-1 font-medium">{call ? "CC" : "CSP"}</th>
             </tr>
           </thead>
           <tbody className="font-[family-name:var(--font-mono)]">
             {buckets.map((bucket) => (
-              <BucketRow key={bucket.bucket} bucket={bucket} />
+              <BucketRow key={bucket.bucket} bucket={bucket} call={call} />
             ))}
           </tbody>
         </table>
@@ -396,7 +468,7 @@ function Buckets({ snapshot }: { snapshot: TickerSnapshot }) {
   );
 }
 
-function BucketRow({ bucket }: { bucket: BucketCandidate }) {
+function BucketRow({ bucket, call }: { bucket: BucketCandidate; call: boolean }) {
   const spread = bucket.spread
     ? `价差 ${bucket.spread.long.strike} / ${bucket.spread.contracts}张`
     : "无价差";
@@ -407,8 +479,17 @@ function BucketRow({ bucket }: { bucket: BucketCandidate }) {
       <td className="py-2">{bucket.csp.delta.toFixed(3)}</td>
       <td className="py-2">${money(bucket.premium_per_contract)}</td>
       <td className="py-2">
-        {bucket.csp_contracts}张 · ${money(bucket.assignment_cash)}
-        <div className="text-[10px] text-[var(--mute)]">{spread}</div>
+        {call ? (
+          <>
+            {bucket.csp_contracts}张
+            <div className="text-[10px] text-[var(--mute)]">行权价卖出 ${money(bucket.assignment_cash)}</div>
+          </>
+        ) : (
+          <>
+            {bucket.csp_contracts}张 · ${money(bucket.assignment_cash)}
+            <div className="text-[10px] text-[var(--mute)]">{spread}</div>
+          </>
+        )}
       </td>
     </tr>
   );
@@ -469,7 +550,15 @@ function Events({ events }: { events: ScoutedEvent[] }) {
   );
 }
 
-function VerdictCard({ desk }: { desk: DeskOutput }) {
+function structureLabel(structure: string | null): string {
+  if (structure === "BULL_PUT_SPREAD") return "牛市看跌价差";
+  if (structure === "COVERED_CALL") return "Covered Call";
+  if (structure === "CSP") return "CSP";
+  return structure ?? "";
+}
+
+function VerdictCard({ desk, mode }: { desk: DeskOutput; mode: "put" | "call" }) {
+  const copy = COPY[mode];
   return (
     <section className="ticket px-4 py-5 pl-7">
       <p className="font-[family-name:var(--font-mono)] text-[11px] tracking-[0.22em] text-[var(--brass)] uppercase">
@@ -482,7 +571,7 @@ function VerdictCard({ desk }: { desk: DeskOutput }) {
               <div className="min-w-0">
                 <p className="font-[family-name:var(--font-mono)] text-sm text-[var(--mute)]">
                   {decision.ticker}
-                  {decision.structure ? ` · ${decision.structure}` : ""}
+                  {decision.structure ? ` · ${structureLabel(decision.structure)}` : ""}
                   {decision.delta_bucket ? ` · ${decision.delta_bucket}` : ""}
                 </p>
                 {decision.contract_id ? (
@@ -510,9 +599,7 @@ function VerdictCard({ desk }: { desk: DeskOutput }) {
           {desk.portfolio_note}
         </p>
       ) : null}
-      <p className="mt-3 text-xs text-[var(--mute)]">
-        不构成投资建议。下单前请核对成交价与被指派所需现金。
-      </p>
+      <p className="mt-3 text-xs text-[var(--mute)]">{copy.disclaimer}</p>
     </section>
   );
 }

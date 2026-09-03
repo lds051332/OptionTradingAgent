@@ -51,6 +51,16 @@ input:focus-visible {
   scrollbar-color: var(--brass) var(--night);
 }
 
+.brand-seal {
+  display: block;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--night);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--brass) 42%, transparent),
+    0 8px 22px rgba(0, 0, 0, 0.28);
+}
+
 .ticket {
   position: relative;
   background: var(--card);
@@ -69,6 +79,27 @@ input:focus-visible {
   background: radial-gradient(circle at 0 6px, var(--night) 5px, transparent 5.5px);
   background-size: 12px 18px;
   pointer-events: none;
+}
+
+.home-gate {
+  width: 100%;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.home-gate:hover {
+  border-color: color-mix(in srgb, var(--brass) 65%, var(--hairline));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--brass) 28%, transparent),
+    0 14px 36px rgba(0, 0, 0, 0.28);
+}
+
+.home-gate:active {
+  transform: translateY(1px);
+}
+
+.home-gate-stock {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--open) 8%, var(--card)) 0%, var(--card) 42%);
 }
 
 .stamp {
@@ -335,5 +366,12 @@ input:focus-visible {
 
   .work-ellipsis::after {
     content: "…";
+  }
+
+  .home-gate,
+  .home-gate:hover,
+  .home-gate:active {
+    transform: none;
+    transition: none;
   }
 }

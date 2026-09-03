@@ -8,6 +8,7 @@ from option_desk.schemas import (
     ContractQuote,
     DeltaBucket,
     DeskAction,
+    DeskMode,
     DeskOutput,
     EventAction,
     EventMechanism,
@@ -123,3 +124,81 @@ def test_undated_geopolitics_forced_ignore():
     got = _normalize(event, ["NVDA"])
     assert got.action == EventAction.IGNORE
     assert got.mechanism == EventMechanism.NOISE
+
+
+def _call_snap(ticker: str = "NVDA", hard_skip: bool = False, cost_basis: float = 170.0) -> TickerSnapshot:
+    cid = f"{ticker}-2026-09-11-C-180"
+    short = _csp(ticker, 180, 0.20, cid)
+    cand = BucketCandidate(
+        bucket=DeltaBucket.STANDARD,
+        target_delta=0.20,
+        csp=short,
+        spread=None,
+        csp_contracts=3,
+        assignment_cash=54000,
+        premium_per_contract=105,
+    )
+    reasons = ["FOMC decision in holding window: 2026-09-16"] if hard_skip else []
+    return TickerSnapshot(
+        ticker=ticker,
+        spot=175.0,
+        as_of=date(2026, 9, 2),
+        fetched_at=datetime(2026, 9, 2, tzinfo=timezone.utc),
+        buckets={DeltaBucket.STANDARD: cand},
+        calendar=CalendarGate(
+            ticker=ticker,
+            hard_skip=hard_skip,
+            hard_reasons=reasons,
+            holding_start=date(2026, 9, 2),
+            holding_end=date(2026, 9, 11),
+        ),
+        mode=DeskMode.CALL,
+        shares=300,
+        cost_basis=cost_basis,
+    )
+
+
+def test_heuristic_opens_covered_call_when_quiet():
+    snap = _call_snap()
+    out = heuristic_desk([snap], events=[], cash=0, lang="zh", mode="call")
+    assert out.decisions[0].action == DeskAction.OPEN
+    assert out.decisions[0].structure == Structure.COVERED_CALL
+    assert out.decisions[0].contract_id == "NVDA-2026-09-11-C-180"
+    assert out.decisions[0].assignment_ok is True
+
+
+def test_call_desk_rejects_put_spread():
+    snap = _call_snap()
+    raw = DeskOutput(
+        decisions=[
+            TickerDecision(
+                ticker="NVDA",
+                action=DeskAction.OPEN,
+                structure=Structure.BULL_PUT_SPREAD,
+                delta_bucket=DeltaBucket.STANDARD,
+                contract_id="NVDA-2026-09-11-C-180",
+                why="wrong structure",
+            )
+        ]
+    )
+    out = enforce_desk_rules(raw, [snap], cash=0, lang="en", mode="call")
+    assert out.decisions[0].action == DeskAction.SKIP
+
+
+def test_call_coerces_csp_label_to_covered_call():
+    snap = _call_snap()
+    raw = DeskOutput(
+        decisions=[
+            TickerDecision(
+                ticker="NVDA",
+                action=DeskAction.OPEN,
+                structure=Structure.CSP,
+                delta_bucket=DeltaBucket.STANDARD,
+                contract_id="NVDA-2026-09-11-C-180",
+                why="llm said csp",
+            )
+        ]
+    )
+    out = enforce_desk_rules(raw, [snap], cash=0, lang="en", mode="call")
+    assert out.decisions[0].action == DeskAction.OPEN
+    assert out.decisions[0].structure == Structure.COVERED_CALL

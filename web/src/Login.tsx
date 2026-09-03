@@ -1,5 +1,6 @@
 import { login } from "./api";
 import { useState, type FormEvent } from "react";
+import { BrandSeal } from "./Brand";
 
 type Props = {
   onLoggedIn: () => void;
@@ -26,14 +27,15 @@ export function Login({ onLoggedIn }: Props) {
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-5 py-10">
-      <p className="mb-2 font-[family-name:var(--font-mono)] text-[11px] tracking-[0.28em] text-[var(--brass)] uppercase">
+      <BrandSeal variant="mark" size="lg" className="mx-auto" alt="摩根大山" />
+      <h1 className="mt-5 text-center font-[family-name:var(--font-display)] text-[2.35rem] leading-none tracking-[0.18em] text-[var(--chalk)]">
+        摩根大山
+      </h1>
+      <p className="mt-3 text-center font-[family-name:var(--font-mono)] text-[11px] tracking-[0.32em] text-[var(--brass)] uppercase">
         Option Desk
       </p>
-      <h1 className="font-[family-name:var(--font-display)] text-4xl leading-tight text-[var(--chalk)]">
-        卖 Put 决策台
-      </h1>
-      <p className="mt-3 text-[15px] leading-relaxed text-[var(--mute)]">
-        短周期美股 CSP / 牛市看跌价差。输入口令进入，分析过程会逐步摊开，不下单。
+      <p className="mt-4 text-center text-[15px] leading-relaxed text-[var(--mute)]">
+        短周期美股轮式决策台：持币卖 put，持股卖 call。输入口令进入，分析过程会逐步摊开，不下单。
       </p>
       <form onSubmit={onSubmit} className="ticket mt-8 px-6 py-6 pl-8">
         <label htmlFor="password" className="block text-sm text-[var(--mute)]">

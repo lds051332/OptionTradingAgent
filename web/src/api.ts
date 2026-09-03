@@ -39,7 +39,10 @@ export async function* startRun(
   body: {
     tickers: string[];
     delta: number;
-    cash: number;
+    cash?: number;
+    mode?: "put" | "call";
+    shares?: number;
+    cost_basis?: number;
   },
   options?: { signal?: AbortSignal },
 ): AsyncGenerator<StreamEvent> {

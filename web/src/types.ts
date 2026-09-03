@@ -10,7 +10,11 @@ export type Defaults = {
   tickers: string[];
   delta: number;
   cash: number;
+  shares?: number;
+  cost_basis?: number | null;
 };
+
+export type DeskMode = "put" | "call";
 
 export type ContractQuote = {
   contract_id: string;
@@ -71,6 +75,9 @@ export type TickerSnapshot = {
   buckets: Record<string, BucketCandidate>;
   calendar: CalendarGate;
   notes: string[];
+  mode?: DeskMode;
+  shares?: number | null;
+  cost_basis?: number | null;
 };
 
 export type ScoutedEvent = {
@@ -110,6 +117,7 @@ export type ExpirationPayoff = {
   max_loss: number;
   loss_limited: boolean;
   assignment_cash: number | null;
+  cost_basis?: number | null;
   pnl_at_spot: number;
   x_min: number;
   x_max: number;

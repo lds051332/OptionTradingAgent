@@ -125,3 +125,30 @@ def test_delta_out_of_range(client):
         json={"tickers": ["NVDA"], "delta": 0.4, "cash": 55000},
     )
     assert response.status_code == 422
+
+
+def test_call_run_requires_shares_and_basis(client):
+    client.post("/api/login", json={"password": "desk-pass"})
+    missing = client.post(
+        "/api/runs",
+        json={"tickers": ["NVDA"], "delta": 0.2, "mode": "call"},
+    )
+    assert missing.status_code == 422
+    ok_shape = client.post(
+        "/api/runs",
+        json={
+            "tickers": ["NVDA"],
+            "delta": 0.2,
+            "mode": "call",
+            "shares": 50,
+            "cost_basis": 170,
+        },
+    )
+    assert ok_shape.status_code == 422
+
+
+def test_login_then_me_includes_shares(client):
+    client.post("/api/login", json={"password": "desk-pass"})
+    body = client.get("/api/me").json()
+    assert "shares" in body
+    assert "cost_basis" in body

@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 
 from option_desk.agents.desk import heuristic_desk, run_desk_llm
 from option_desk.config import Settings
-from option_desk.payoff import attach_payoffs, expiration_pnl
+from option_desk.payoff import attach_payoffs, expiration_pnl, expiration_pnl_covered_call
 from option_desk.report import render_markdown
 from option_desk.schemas import (
     BucketCandidate,
@@ -149,3 +149,36 @@ def test_markdown_lists_payoff_numbers():
     assert "到期损益" in md
     assert "158.95" in md
     assert "按 mid 估算" in md
+
+
+def test_covered_call_expiration_formula():
+    assert expiration_pnl_covered_call(
+        190, short_strike=180, credit_per_share=1.05, cost_basis=170, contracts=3
+    ) == 3315
+    assert expiration_pnl_covered_call(
+        180, short_strike=180, credit_per_share=1.05, cost_basis=170, contracts=3
+    ) == 3315
+    assert expiration_pnl_covered_call(
+        168.95, short_strike=180, credit_per_share=1.05, cost_basis=170, contracts=3
+    ) == 0
+    assert expiration_pnl_covered_call(
+        0, short_strike=180, credit_per_share=1.05, cost_basis=170, contracts=3
+    ) == -50685
+
+
+def test_attach_covered_call_payoff():
+    from tests.test_desk import _call_snap
+
+    snap = _call_snap()
+    settings = Settings(tickers="NVDA", desk_mode="call", shares=300, cost_basis=170, output_language="zh")
+    out = run_desk_llm([snap], [], 0, settings, llm=None)
+    decision = out.decisions[0]
+    assert decision.action == DeskAction.OPEN
+    po = decision.payoff
+    assert po is not None
+    assert po.structure == Structure.COVERED_CALL
+    assert po.contracts == 3
+    assert po.breakeven == 168.95
+    assert po.max_profit == 3315
+    assert po.cost_basis == 170
+    assert po.loss_limited is False

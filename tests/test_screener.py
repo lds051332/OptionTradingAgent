@@ -78,3 +78,43 @@ def test_build_buckets_csp_qty_and_two_rungs():
     assert std.csp_contracts == int(55000 // (160 * 100))
     assert std.spread is not None
     assert std.spread.long.strike < std.csp.strike
+
+
+def test_build_call_buckets_qty_from_shares():
+    from option_desk.chain.screener import build_call_buckets
+
+    settings = Settings(shares=350, desk_mode="call")
+    quotes = [
+        _quote(
+            contract_id="NVDA-2026-09-11-C-190",
+            strike=190.0,
+            delta=0.11,
+            mid=0.80,
+            bid=0.75,
+            ask=0.85,
+        ),
+        _quote(
+            contract_id="NVDA-2026-09-11-C-180",
+            strike=180.0,
+            delta=0.20,
+            mid=1.40,
+            bid=1.30,
+            ask=1.50,
+        ),
+        _quote(
+            contract_id="NVDA-2026-09-11-C-200",
+            strike=200.0,
+            delta=0.06,
+            mid=0.35,
+            bid=0.30,
+            ask=0.40,
+        ),
+    ]
+    buckets = build_call_buckets(quotes, shares=350, settings=settings)
+    assert DeltaBucket.CONSERVATIVE in buckets
+    assert DeltaBucket.STANDARD in buckets
+    std = buckets[DeltaBucket.STANDARD]
+    assert std.csp.strike == 180.0
+    assert std.csp_contracts == 3
+    assert std.spread is None
+    assert std.assignment_cash == 3 * 180 * 100

@@ -67,7 +67,12 @@ export function PayoffChart({ ticker, payoff }: Props) {
 
   const marks = placeMarks(payoff, xPx);
   const expiry = payoff.expiry.slice(0, 10);
-  const structure = payoff.structure === "BULL_PUT_SPREAD" ? "牛市看跌价差" : "CSP";
+  const structure =
+    payoff.structure === "BULL_PUT_SPREAD"
+      ? "牛市看跌价差"
+      : payoff.structure === "COVERED_CALL"
+        ? "Covered Call"
+        : "CSP";
   const lossText = payoff.loss_limited ? money(payoff.max_loss) : `${money(payoff.max_loss)} · 到 $0`;
   const spotX = xPx(payoff.spot);
   const spotTagRight = spotX > pad.l + innerW * 0.62;
@@ -177,7 +182,14 @@ export function PayoffChart({ ticker, payoff }: Props) {
       </svg>
       <p className="payoff-foot">
         到期若仍在现价：{signedMoney(payoff.pnl_at_spot)}
-        {payoff.assignment_cash != null ? ` · 若指派需现金 ${money(payoff.assignment_cash)}` : ""}
+        {payoff.structure === "COVERED_CALL"
+          ? payoff.assignment_cash != null
+            ? ` · 若指派按行权价卖出，收入 ${money(payoff.assignment_cash)}`
+            : ""
+          : payoff.assignment_cash != null
+            ? ` · 若指派需现金 ${money(payoff.assignment_cash)}`
+            : ""}
+        {payoff.cost_basis != null ? ` · 成本 ${money(payoff.cost_basis, 2)}` : ""}
         。按链上 mid 估算，非成交价；不含手续费与提前指派。
       </p>
     </div>

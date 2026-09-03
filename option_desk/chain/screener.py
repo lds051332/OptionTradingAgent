@@ -7,13 +7,14 @@ from typing import Callable, TypeVar
 import pandas as pd
 import yfinance as yf
 
-from option_desk.chain.greeks import abs_put_delta, years_from_dte
+from option_desk.chain.greeks import abs_put_delta, call_delta, years_from_dte
 from option_desk.config import Settings
 from option_desk.schemas import (
     BucketCandidate,
     CalendarGate,
     ContractQuote,
     DeltaBucket,
+    DeskMode,
     SpreadQuote,
     TickerSnapshot,
 )
@@ -54,8 +55,9 @@ def _spread_pct(bid: float, ask: float, mid: float) -> float:
     return max(ask - bid, 0) / mid
 
 
-def _contract_id(ticker: str, expiry: date, strike: float) -> str:
-    return f"{ticker}-{expiry.isoformat()}-P-{strike:g}"
+def _contract_id(ticker: str, expiry: date, strike: float, right: str = "P") -> str:
+    flag = "C" if right.upper() == "C" else "P"
+    return f"{ticker}-{expiry.isoformat()}-{flag}-{strike:g}"
 
 
 T = TypeVar("T")
@@ -116,6 +118,7 @@ def _row_quote(
     row: pd.Series,
     spot: float,
     settings: Settings,
+    right: str = "P",
 ) -> ContractQuote | None:
     strike = _cell_float(row.get("strike"))
     bid = _cell_float(row.get("bid"))
@@ -135,18 +138,29 @@ def _row_quote(
         return None
     if oi < settings.min_open_interest and volume < settings.min_open_interest:
         return None
-    delta = abs_put_delta(
-        spot,
-        strike,
-        years_from_dte(dte),
-        iv,
-        r=settings.risk_free_rate,
-        q=settings.dividend_yield,
-    )
+    t_years = years_from_dte(dte)
+    if right.upper() == "C":
+        delta = call_delta(
+            spot,
+            strike,
+            t_years,
+            iv,
+            r=settings.risk_free_rate,
+            q=settings.dividend_yield,
+        )
+    else:
+        delta = abs_put_delta(
+            spot,
+            strike,
+            t_years,
+            iv,
+            r=settings.risk_free_rate,
+            q=settings.dividend_yield,
+        )
     if delta is None:
         return None
     return ContractQuote(
-        contract_id=_contract_id(ticker, expiry, strike),
+        contract_id=_contract_id(ticker, expiry, strike, right),
         ticker=ticker,
         expiry=expiry,
         dte=dte,
@@ -163,15 +177,17 @@ def _row_quote(
     )
 
 
-def load_put_quotes(
+def load_option_quotes(
     ticker: str,
     spot: float,
     as_of: date,
     settings: Settings,
+    right: str = "P",
 ) -> list[ContractQuote]:
     instrument = yf.Ticker(ticker)
     expirations = _with_retry(lambda: tuple(instrument.options or ()))
     quotes: list[ContractQuote] = []
+    flag = "C" if right.upper() == "C" else "P"
     for expiry_str in expirations:
         expiry = date.fromisoformat(expiry_str)
         dte = (expiry - as_of).days
@@ -181,14 +197,32 @@ def load_put_quotes(
             chain = _with_retry(lambda exp=expiry_str: instrument.option_chain(exp), attempts=2)
         except Exception:
             continue
-        puts = chain.puts
-        if puts is None or puts.empty:
+        frame = chain.calls if flag == "C" else chain.puts
+        if frame is None or frame.empty:
             continue
-        for _, row in puts.iterrows():
-            quote = _row_quote(ticker, expiry, dte, row, spot, settings)
+        for _, row in frame.iterrows():
+            quote = _row_quote(ticker, expiry, dte, row, spot, settings, right=flag)
             if quote is not None:
                 quotes.append(quote)
     return quotes
+
+
+def load_put_quotes(
+    ticker: str,
+    spot: float,
+    as_of: date,
+    settings: Settings,
+) -> list[ContractQuote]:
+    return load_option_quotes(ticker, spot, as_of, settings, right="P")
+
+
+def load_call_quotes(
+    ticker: str,
+    spot: float,
+    as_of: date,
+    settings: Settings,
+) -> list[ContractQuote]:
+    return load_option_quotes(ticker, spot, as_of, settings, right="C")
 
 
 def select_bucket(
@@ -226,6 +260,12 @@ def _csp_contracts(cash: float, strike: float) -> int:
     if strike <= 0:
         return 0
     return max(int(cash // (strike * 100)), 0)
+
+
+def _cc_contracts(shares: float) -> int:
+    if shares <= 0:
+        return 0
+    return max(int(shares // 100), 0)
 
 
 def _spread_contracts(settings: Settings, short: ContractQuote, long: ContractQuote) -> SpreadQuote:
@@ -276,18 +316,60 @@ def build_buckets(
     return buckets
 
 
+def build_call_buckets(
+    quotes: list[ContractQuote],
+    shares: float,
+    settings: Settings,
+) -> dict[DeltaBucket, BucketCandidate]:
+    specs = (
+        (DeltaBucket.CONSERVATIVE, settings.conservative_delta, settings.conservative_delta_band),
+        (DeltaBucket.STANDARD, settings.standard_delta, settings.standard_delta_band),
+    )
+    buckets: dict[DeltaBucket, BucketCandidate] = {}
+    used_ids: set[str] = set()
+    contracts = _cc_contracts(shares)
+    for bucket, target, band in specs:
+        short = select_bucket([q for q in quotes if q.contract_id not in used_ids], target, band)
+        if short is None:
+            continue
+        used_ids.add(short.contract_id)
+        buckets[bucket] = BucketCandidate(
+            bucket=bucket,
+            target_delta=target,
+            csp=short,
+            spread=None,
+            csp_contracts=contracts,
+            assignment_cash=round(contracts * short.strike * 100, 2),
+            premium_per_contract=round(short.mid * 100, 2),
+        )
+    return buckets
+
+
 def screen_ticker(ticker: str, as_of: date, settings: Settings) -> TickerSnapshot:
     fetched_at = datetime.now(timezone.utc)
     notes: list[str] = []
     spot = fetch_spot(ticker)
-    quotes = load_put_quotes(ticker, spot, as_of, settings)
+    mode = DeskMode.CALL if str(settings.desk_mode).lower() == "call" else DeskMode.PUT
+    if mode is DeskMode.CALL:
+        quotes = load_call_quotes(ticker, spot, as_of, settings)
+        empty_msg = f"No liquid calls in DTE {settings.min_dte}-{settings.max_dte}."
+        buckets = build_call_buckets(quotes, settings.shares, settings)
+        leftover = max(int(settings.shares) - _cc_contracts(settings.shares) * 100, 0)
+        if leftover:
+            if str(settings.output_language).lower().startswith("zh"):
+                notes.append(f"{leftover} 股未覆盖（每张合约对应 100 股）。")
+            else:
+                notes.append(f"{leftover} shares uncovered (contracts cover lots of 100).")
+    else:
+        quotes = load_put_quotes(ticker, spot, as_of, settings)
+        empty_msg = f"No liquid puts in DTE {settings.min_dte}-{settings.max_dte}."
+        buckets = build_buckets(quotes, settings.cash, settings)
     if as_of != date.today():
         notes.append(
             "Option chain is a live yfinance snapshot; --as-of only shifts DTE and calendar windows."
         )
     if not quotes:
-        notes.append(f"No liquid puts in DTE {settings.min_dte}-{settings.max_dte}.")
-    buckets = build_buckets(quotes, settings.cash, settings)
+        notes.append(empty_msg)
     if buckets:
         holding_end = max(c.csp.expiry for c in buckets.values())
     else:
@@ -306,4 +388,7 @@ def screen_ticker(ticker: str, as_of: date, settings: Settings) -> TickerSnapsho
             holding_end=holding_end,
         ),
         notes=notes,
+        mode=mode,
+        shares=settings.shares if mode is DeskMode.CALL else None,
+        cost_basis=settings.cost_basis if mode is DeskMode.CALL else None,
     )

@@ -11,7 +11,7 @@ from option_desk.config import Settings
 from option_desk.events.scout import classify_scout_hits, scout_queries
 from option_desk.events.search import search_web
 from option_desk.i18n import normalize_lang, t
-from option_desk.schemas import DeskRun, TickerSnapshot
+from option_desk.schemas import DeskMode, DeskRun, TickerSnapshot
 from option_desk.stream import StreamEvent, stream_event
 
 
@@ -52,6 +52,8 @@ def iter_desk(
         as_of = as_of or date.today()
         warnings: list[str] = []
         snapshots: list[TickerSnapshot] = []
+        mode = DeskMode.CALL if str(settings.desk_mode).lower() == "call" else DeskMode.PUT
+        right = "call" if mode is DeskMode.CALL else "put"
 
         endpoint = settings.llm_endpoint()
         llm = make_llm(settings, endpoint)
@@ -68,13 +70,16 @@ def iter_desk(
             as_of=as_of.isoformat(),
             llm_label=llm_label,
             language=lang,
+            mode=mode.value,
+            shares=settings.shares if mode is DeskMode.CALL else None,
+            cost_basis=settings.cost_basis if mode is DeskMode.CALL else None,
         )
 
         for ticker in tickers:
             yield stream_event(
                 "screen_started",
                 ticker=ticker,
-                message=f"正在拉取 {ticker} 期权链并估算 Delta…",
+                message=f"正在拉取 {ticker} {right} 链并估算 Delta…",
             )
             try:
                 snap = screen_ticker(ticker, as_of, settings)
@@ -167,6 +172,9 @@ def iter_desk(
             warnings=warnings,
             llm_label=llm_label,
             language=lang,
+            mode=mode,
+            shares=settings.shares if mode is DeskMode.CALL else None,
+            cost_basis=settings.cost_basis if mode is DeskMode.CALL else None,
         )
         yield stream_event(
             "run_finished",

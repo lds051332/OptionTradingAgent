@@ -18,9 +18,15 @@ class DeskAction(str, Enum):
     CLOSE_EARLY = "CLOSE_EARLY"
 
 
+class DeskMode(str, Enum):
+    PUT = "put"
+    CALL = "call"
+
+
 class Structure(str, Enum):
     CSP = "CSP"
     BULL_PUT_SPREAD = "BULL_PUT_SPREAD"
+    COVERED_CALL = "COVERED_CALL"
 
 
 class EventAction(str, Enum):
@@ -96,6 +102,9 @@ class TickerSnapshot(BaseModel):
     buckets: dict[DeltaBucket, BucketCandidate] = Field(default_factory=dict)
     calendar: CalendarGate
     notes: list[str] = Field(default_factory=list)
+    mode: DeskMode = DeskMode.PUT
+    shares: float | None = None
+    cost_basis: float | None = None
 
 
 class ScoutedEvent(BaseModel):
@@ -145,6 +154,7 @@ class ExpirationPayoff(BaseModel):
     max_loss: float
     loss_limited: bool
     assignment_cash: float | None = None
+    cost_basis: float | None = None
     pnl_at_spot: float
     x_min: float
     x_max: float
@@ -178,3 +188,6 @@ class DeskRun(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     llm_label: str = "heuristic"
     language: str = "en"
+    mode: DeskMode = DeskMode.PUT
+    shares: float | None = None
+    cost_basis: float | None = None

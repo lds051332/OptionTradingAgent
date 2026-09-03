@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from option_desk.schemas import (
     DeskAction,
+    DeskMode,
     DeskOutput,
     ExpirationPayoff,
     PayoffPoint,
@@ -21,11 +22,25 @@ def expiration_pnl(
     long_strike: float | None = None,
     contracts: int,
 ) -> float:
-    """Expiration P/L in dollars for the full position, European-style."""
+    """Expiration P/L in dollars for a short put or bull put spread, European-style."""
     short_intr = max(short_strike - spot_at_expiry, 0.0)
     long_intr = max((long_strike or 0.0) - spot_at_expiry, 0.0) if long_strike is not None else 0.0
     per_share = credit_per_share - short_intr + long_intr
     return round(per_share * _CONTRACT_MULT * contracts, 2)
+
+
+def expiration_pnl_covered_call(
+    spot_at_expiry: float,
+    *,
+    short_strike: float,
+    credit_per_share: float,
+    cost_basis: float,
+    contracts: int,
+) -> float:
+    """Stock + short call expiration P/L versus cost basis, in dollars."""
+    stock = (spot_at_expiry - cost_basis) * _CONTRACT_MULT * contracts
+    call_opt = (credit_per_share - max(spot_at_expiry - short_strike, 0.0)) * _CONTRACT_MULT * contracts
+    return round(stock + call_opt, 2)
 
 
 def _window(
@@ -33,10 +48,13 @@ def _window(
     short_strike: float,
     long_strike: float | None,
     breakeven: float,
+    extra: float | None = None,
 ) -> tuple[float, float]:
     anchors = [spot, short_strike, breakeven]
     if long_strike is not None:
         anchors.append(long_strike)
+    if extra is not None:
+        anchors.append(extra)
     lo = min(anchors)
     hi = max(anchors)
     span = max(hi - lo, max(short_strike * 0.08, 8.0))
@@ -65,13 +83,16 @@ def build_payoff(decision: TickerDecision, snapshot: TickerSnapshot) -> Expirati
     if decision.contract_id and decision.contract_id != bucket.csp.contract_id:
         return None
 
-    structure = decision.structure or Structure.CSP
+    structure = decision.structure or (
+        Structure.COVERED_CALL if snapshot.mode is DeskMode.CALL else Structure.CSP
+    )
     short = bucket.csp
     long_strike: float | None = None
     credit = short.mid
     contracts = bucket.csp_contracts
     assignment_cash: float | None = bucket.assignment_cash
     loss_limited = False
+    cost_basis = snapshot.cost_basis
 
     if structure == Structure.BULL_PUT_SPREAD:
         spread = bucket.spread
@@ -85,6 +106,47 @@ def build_payoff(decision: TickerDecision, snapshot: TickerSnapshot) -> Expirati
 
     if contracts <= 0:
         return None
+
+    if structure == Structure.COVERED_CALL:
+        basis = float(cost_basis or 0.0)
+        breakeven = basis - credit
+        x_min, x_max = _window(snapshot.spot, short.strike, None, breakeven, extra=basis)
+        kinks = [x_min, x_max, short.strike, breakeven, basis]
+
+        def cc_pnl(spot: float) -> float:
+            return round(
+                expiration_pnl_covered_call(
+                    spot,
+                    short_strike=short.strike,
+                    credit_per_share=credit,
+                    cost_basis=basis,
+                    contracts=contracts,
+                ),
+                2,
+            )
+
+        max_profit = cc_pnl(max(x_max, short.strike))
+        max_loss = -cc_pnl(0.0)
+        return ExpirationPayoff(
+            structure=structure,
+            spot=snapshot.spot,
+            expiry=short.expiry,
+            dte=short.dte,
+            short_strike=short.strike,
+            long_strike=None,
+            breakeven=round(breakeven, 4),
+            credit_per_share=round(credit, 4),
+            contracts=contracts,
+            max_profit=max_profit,
+            max_loss=round(max_loss, 2),
+            loss_limited=False,
+            assignment_cash=assignment_cash,
+            cost_basis=basis,
+            pnl_at_spot=cc_pnl(snapshot.spot),
+            x_min=x_min,
+            x_max=x_max,
+            points=[PayoffPoint(spot=s, pnl=cc_pnl(s)) for s in _unique_spots(*kinks)],
+        )
 
     breakeven = short.strike - credit
     x_min, x_max = _window(snapshot.spot, short.strike, long_strike, breakeven)

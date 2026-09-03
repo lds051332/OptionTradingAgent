@@ -146,6 +146,18 @@ class Settings(BaseSettings):
         default=55000,
         validation_alias=AliasChoices("OPTION_DESK_CASH", "cash"),
     )
+    shares: float = Field(
+        default=100,
+        validation_alias=AliasChoices("OPTION_DESK_SHARES", "shares"),
+    )
+    cost_basis: float = Field(
+        default=0,
+        validation_alias=AliasChoices("OPTION_DESK_COST_BASIS", "cost_basis"),
+    )
+    desk_mode: str = Field(
+        default="put",
+        validation_alias=AliasChoices("OPTION_DESK_MODE", "desk_mode"),
+    )
     min_dte: int = 3
     max_dte: int = 9
     conservative_delta: float = 0.11
@@ -183,6 +195,14 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("OPTION_DESK_OUTPUT_LANGUAGE", "output_language"),
     )
 
+    @field_validator("desk_mode", mode="before")
+    @classmethod
+    def _normalize_desk_mode(cls, value: str | None) -> str:
+        raw = str(value or "put").strip().lower()
+        if raw not in {"put", "call"}:
+            raise ValueError("desk_mode must be put or call")
+        return raw
+
     @field_validator("output_language", mode="before")
     @classmethod
     def _normalize_output_language(cls, value: str | None) -> str:
@@ -217,6 +237,8 @@ CONSERVATIVE_DELTA_RATIO = 0.11 / 0.20
 MIN_RUN_DELTA = 0.05
 MAX_RUN_DELTA = 0.25
 MAX_RUN_TICKERS = 5
+MIN_RUN_SHARES = 100
+MAX_RUN_SHARES = 1_000_000
 
 
 def apply_run_overrides(
@@ -226,6 +248,9 @@ def apply_run_overrides(
     delta: float | None = None,
     cash: float | None = None,
     language: str | None = None,
+    desk_mode: str | None = None,
+    shares: float | None = None,
+    cost_basis: float | None = None,
 ) -> Settings:
     """Per-run overlay. Does not mutate cached process settings."""
     updates: dict[str, object] = {}
@@ -240,6 +265,15 @@ def apply_run_overrides(
         from option_desk.i18n import normalize_lang
 
         updates["output_language"] = normalize_lang(language)
+    if desk_mode is not None:
+        mode = desk_mode.strip().lower()
+        if mode not in {"put", "call"}:
+            raise ValueError(f"Unknown desk mode {desk_mode!r}")
+        updates["desk_mode"] = mode
+    if shares is not None:
+        updates["shares"] = float(shares)
+    if cost_basis is not None:
+        updates["cost_basis"] = float(cost_basis)
     return settings.model_copy(update=updates) if updates else settings
 
 
