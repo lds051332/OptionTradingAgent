@@ -1,6 +1,6 @@
 # Option Desk
 
-美股个股、短周期**轮式决策台**。给建议，不报单。欢迎到 [https://option.xdashan.top/](https://option.xdashan.top/) 体验。
+美股个股、短周期**轮式决策台**。给建议，不报单。欢迎到 [https://option.xdashan.top/](https://option.xdashan.top/) 体验，口令 `677729`。
 
 登录后先选账本：持币卖 put，或持股卖 covered call。两条账共用同一条流水线：拉链 → 日历门控 → 事件侦察 → 结构化终审。DTE 3–9 天。
 
