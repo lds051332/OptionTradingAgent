@@ -45,3 +45,7 @@ TradingAgents-深度解析.md
 # Optional local reference trees
 TradingAgents-src/
 agent-transcripts/
+
+# Personal QR codes stay local; keep the folder so Docker COPY does not fail
+qrcode/*
+!qrcode/.gitkeep

@@ -1,13 +1,11 @@
 import { BrandLockup } from "./Brand";
-
-type DeskMode = "put" | "call";
+import { Link } from "./router";
 
 type Props = {
-  onOpen: (mode: DeskMode) => void;
   onLogout: () => void;
 };
 
-export function Home({ onOpen, onLogout }: Props) {
+export function Home({ onLogout }: Props) {
   return (
     <div className="mx-auto flex min-h-dvh max-w-2xl flex-col px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))]">
       <header className="mb-8 flex items-center justify-between gap-3">
@@ -29,7 +27,7 @@ export function Home({ onOpen, onLogout }: Props) {
           body="现金担保。CSP 或牛市看跌价差。被指派后再换到持股账。"
           action="打开卖 Put 决策台"
           tone="cash"
-          onClick={() => onOpen("put")}
+          to="/put"
         />
         <GateCard
           index="02"
@@ -38,7 +36,7 @@ export function Home({ onOpen, onLogout }: Props) {
           body="手里已经有股票。只卖 covered call，到期要么收租，要么按行权价卖掉。"
           action="打开卖 Call 决策台"
           tone="stock"
-          onClick={() => onOpen("call")}
+          to="/call"
         />
       </div>
     </div>
@@ -52,7 +50,7 @@ function GateCard({
   body,
   action,
   tone,
-  onClick,
+  to,
 }: {
   index: string;
   kicker: string;
@@ -60,10 +58,10 @@ function GateCard({
   body: string;
   action: string;
   tone: "cash" | "stock";
-  onClick: () => void;
+  to: string;
 }) {
   return (
-    <button type="button" onClick={onClick} className={`ticket home-gate home-gate-${tone} px-5 py-6 pl-8 text-left`}>
+    <Link to={to} className={`ticket home-gate home-gate-${tone} px-5 py-6 pl-8 text-left`}>
       <p className="font-[family-name:var(--font-mono)] text-[11px] tracking-[0.26em] text-[var(--brass)] uppercase">
         {index} · {kicker}
       </p>
@@ -74,6 +72,6 @@ function GateCard({
       <span className="mt-5 inline-flex min-h-11 items-center font-[family-name:var(--font-mono)] text-sm text-[var(--brass)]">
         {action} →
       </span>
-    </button>
+    </Link>
   );
 }

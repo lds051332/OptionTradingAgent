@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { startRun } from "./api";
 import { BrandLockup } from "./Brand";
+import { Link } from "./router";
 import { PayoffChart } from "./PayoffChart";
 import { TickerCombobox, normalizeSymbol } from "./TickerCombobox";
 import type {
@@ -18,7 +19,6 @@ import type {
 type Props = {
   defaults: Defaults;
   mode: "put" | "call";
-  onBack: () => void;
   onLogout: () => void;
 };
 
@@ -158,7 +158,7 @@ function applyEvent(steps: TimelineStep[], event: StreamEvent): TimelineStep[] {
   }
 }
 
-export function Desk({ defaults, mode, onBack, onLogout }: Props) {
+export function Desk({ defaults, mode, onLogout }: Props) {
   const copy = COPY[mode];
   const [ticker, setTicker] = useState(defaults.tickers[0] ?? "");
   const [delta, setDelta] = useState(defaults.delta);
@@ -237,18 +237,11 @@ export function Desk({ defaults, mode, onBack, onLogout }: Props) {
   return (
     <div className="mx-auto flex min-h-dvh max-w-2xl flex-col px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))]">
       <header className="mb-4 flex items-center justify-between gap-3">
-        <BrandLockup title={copy.title} />
+        <BrandLockup title={copy.title} onHome={stopRun} />
         <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => {
-              stopRun();
-              onBack();
-            }}
-            className="min-h-11 px-2 text-sm text-[var(--mute)]"
-          >
+          <Link to="/" onClick={stopRun} className="inline-flex min-h-11 items-center px-2 text-sm text-[var(--mute)]">
             返回
-          </button>
+          </Link>
           <button
             type="button"
             onClick={() => {

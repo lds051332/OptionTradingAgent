@@ -1,5 +1,6 @@
 import icon from "./assets/morgan-dashan-icon.png";
 import mark from "./assets/morgan-dashan-mark.png";
+import { Link } from "./router";
 
 type SealSize = "sm" | "md" | "lg";
 
@@ -34,9 +35,9 @@ export function BrandSeal({
   );
 }
 
-export function BrandLockup({ title }: { title: string }) {
+export function BrandLockup({ title, onHome }: { title: string; onHome?: () => void }) {
   return (
-    <div className="flex min-w-0 items-center gap-3">
+    <Link to="/" onClick={onHome} className="brand-lockup flex min-w-0 items-center gap-3">
       <BrandSeal variant="icon" size="md" />
       <div className="min-w-0">
         <p className="font-[family-name:var(--font-display)] text-[13px] tracking-[0.22em] text-[var(--brass)]">
@@ -46,6 +47,6 @@ export function BrandLockup({ title }: { title: string }) {
           {title}
         </h1>
       </div>
-    </div>
+    </Link>
   );
 }

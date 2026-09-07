@@ -2,6 +2,7 @@ FROM node:22-alpine AS frontend
 WORKDIR /web
 COPY web/package.json web/package-lock.json* ./
 RUN npm install
+COPY qrcode /qrcode
 COPY web/ ./
 RUN npm run build
 
