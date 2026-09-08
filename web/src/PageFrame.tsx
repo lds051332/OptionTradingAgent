@@ -1,39 +1,25 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { media } from "./staticMedia";
 
 type Rail = "wechat" | "alipay" | "add";
 type QrItem = { id: Rail; label: string; src: string; alt: string; app: string };
 
-const qrAssets = import.meta.glob("../../qrcode/*.{png,jpg,jpeg,webp}", {
-  eager: true,
-  import: "default",
-}) as Record<string, string>;
-
-function qrSrc(filename: string): string | undefined {
-  const needle = filename.toLowerCase();
-  for (const [key, url] of Object.entries(qrAssets)) {
-    const base = key.replaceAll("\\", "/").split("/").pop()?.toLowerCase();
-    if (base === needle) return url;
-  }
-  return undefined;
-}
-
 function qrItem(
   id: Rail,
-  filename: string,
+  src: string | undefined,
   label: string,
   alt: string,
   app: string,
 ): QrItem | undefined {
-  const src = qrSrc(filename);
   return src ? { id, label, src, alt, app } : undefined;
 }
 
 const PAY_RAILS = [
-  qrItem("wechat", "wechat.png", "微信", "微信收款码", "微信"),
-  qrItem("alipay", "alipay.jpg", "支付宝", "支付宝收款码", "支付宝"),
+  qrItem("wechat", media.qrWechat, "微信", "微信收款码", "微信"),
+  qrItem("alipay", media.qrAlipay, "支付宝", "支付宝收款码", "支付宝"),
 ].filter((item): item is QrItem => item != null);
 
-const CONTACT_RAIL = qrItem("add", "add_wechat.png", "加微信", "个人微信二维码", "微信");
+const CONTACT_RAIL = qrItem("add", media.qrAddWechat, "加微信", "个人微信二维码", "微信");
 const ALL_RAILS = CONTACT_RAIL ? [...PAY_RAILS, CONTACT_RAIL] : PAY_RAILS;
 const HAS_PAY = PAY_RAILS.length > 0;
 const HAS_CONTACT = CONTACT_RAIL != null;

@@ -1,6 +1,5 @@
-import icon from "./assets/morgan-dashan-icon.png";
-import mark from "./assets/morgan-dashan-mark.png";
 import { Link } from "./router";
+import { media } from "./staticMedia";
 
 type SealSize = "sm" | "md" | "lg";
 
@@ -24,7 +23,7 @@ export function BrandSeal({
   const px = SEAL_PX[size];
   return (
     <img
-      src={variant === "mark" ? mark : icon}
+      src={variant === "mark" ? media.brandMark : media.brandIcon}
       alt={alt}
       width={px}
       height={px}
