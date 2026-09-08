@@ -56,7 +56,12 @@ export function App() {
   const page = !defaults ? (
     <Login onLoggedIn={() => void refresh()} />
   ) : path === "/put" || path === "/call" ? (
-    <Desk defaults={defaults} mode={path.slice(1) as "put" | "call"} onLogout={handleLogout} />
+    <Desk
+      key={path}
+      defaults={defaults}
+      mode={path.slice(1) as "put" | "call"}
+      onLogout={handleLogout}
+    />
   ) : (
     <Home onLogout={handleLogout} />
   );

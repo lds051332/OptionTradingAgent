@@ -4,6 +4,7 @@ import { BrandLockup } from "./Brand";
 import { Link } from "./router";
 import { PayoffChart } from "./PayoffChart";
 import { TickerCombobox, normalizeSymbol } from "./TickerCombobox";
+import { formatCachedAt, loadCachedRun, saveCachedRun } from "./runCache";
 import type {
   BucketCandidate,
   CalendarGate,
@@ -160,16 +161,18 @@ function applyEvent(steps: TimelineStep[], event: StreamEvent): TimelineStep[] {
 
 export function Desk({ defaults, mode, onLogout }: Props) {
   const copy = COPY[mode];
-  const [ticker, setTicker] = useState(defaults.tickers[0] ?? "");
-  const [delta, setDelta] = useState(defaults.delta);
-  const [cash, setCash] = useState(defaults.cash);
-  const [shares, setShares] = useState(defaults.shares || 100);
-  const [costBasis, setCostBasis] = useState(defaults.cost_basis || 0);
-  const [configOpen, setConfigOpen] = useState(true);
+  const [seed] = useState(() => loadCachedRun(mode));
+  const [ticker, setTicker] = useState(seed?.ticker || defaults.tickers[0] || "");
+  const [delta, setDelta] = useState(seed?.delta ?? defaults.delta);
+  const [cash, setCash] = useState(seed?.cash ?? defaults.cash);
+  const [shares, setShares] = useState(seed?.shares || defaults.shares || 100);
+  const [costBasis, setCostBasis] = useState(seed?.costBasis || defaults.cost_basis || 0);
+  const [configOpen, setConfigOpen] = useState(!seed);
   const [running, setRunning] = useState(false);
-  const [steps, setSteps] = useState<TimelineStep[]>([]);
-  const [userPrompt, setUserPrompt] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [steps, setSteps] = useState<TimelineStep[]>(seed?.steps ?? []);
+  const [userPrompt, setUserPrompt] = useState<string | null>(seed?.userPrompt ?? null);
+  const [error, setError] = useState<string | null>(seed?.error ?? null);
+  const [cachedAt, setCachedAt] = useState<string | null>(seed?.savedAt ?? null);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -190,48 +193,75 @@ export function Desk({ defaults, mode, onLogout }: Props) {
   }, [mode, ticker, delta, cash, shares, costBasis]);
 
   const verdict = steps.find((step) => step.id === "desk" && step.status === "done")?.desk;
+  const hasResult = steps.length > 0 || Boolean(userPrompt);
 
   async function onAnalyze(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const raw = String(new FormData(event.currentTarget).get("ticker") ?? ticker);
-    const symbol = normalizeSymbol(raw);
+    await runAnalysis(raw);
+  }
+
+  async function runAnalysis(rawTicker: string) {
+    const symbol = normalizeSymbol(rawTicker);
     if (running || !symbol) return;
     if (mode === "call" && (shares < 100 || costBasis <= 0)) return;
     setTicker(symbol);
     setRunning(true);
     setError(null);
     setSteps([]);
+    setCachedAt(null);
     setConfigOpen(false);
-    setUserPrompt(
+    const prompt =
       mode === "call"
         ? `分析 ${symbol} · Δ ${delta.toFixed(2)} · ${shares}股 · 成本 $${costBasis.toFixed(2)}`
-        : `分析 ${symbol} · Δ ${delta.toFixed(2)} · 本金 $${money(cash)}`,
-    );
+        : `分析 ${symbol} · Δ ${delta.toFixed(2)} · 本金 $${money(cash)}`;
+    setUserPrompt(prompt);
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    let latest: TimelineStep[] = [];
+    let latestError: string | null = null;
+    let aborted = false;
     try {
       const body =
         mode === "call"
           ? { tickers: [symbol], delta, mode: "call" as const, shares, cost_basis: costBasis }
           : { tickers: [symbol], delta, cash, mode: "put" as const };
       for await (const item of startRun(body, { signal: controller.signal })) {
-        setSteps((current) => applyEvent(current, item));
-        if (item.type === "run_error") setError(item.message);
+        latest = applyEvent(latest, item);
+        setSteps(latest);
+        if (item.type === "run_error") {
+          latestError = item.message;
+          setError(item.message);
+        }
       }
     } catch (err) {
       if (controller.signal.aborted || (err instanceof Error && err.name === "AbortError")) {
+        aborted = true;
         return;
       }
       const message = err instanceof Error ? err.message : "分析失败";
+      latestError = message;
       setError(message);
-      setSteps((current) =>
-        applyEvent(current, { type: "run_error", message, ticker: null, data: {} }),
-      );
+      latest = applyEvent(latest, { type: "run_error", message, ticker: null, data: {} });
+      setSteps(latest);
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
       setRunning(false);
     }
+    if (aborted) return;
+    const stored = saveCachedRun({
+      mode,
+      ticker: symbol,
+      delta,
+      cash,
+      shares,
+      costBasis,
+      userPrompt: prompt,
+      steps: latest,
+      error: latestError,
+    });
+    if (stored) setCachedAt(stored.savedAt);
   }
 
   return (
@@ -256,17 +286,44 @@ export function Desk({ defaults, mode, onLogout }: Props) {
       </header>
 
       <section className="ticket mb-5 px-4 py-3 pl-7">
-        <button
-          type="button"
-          className="flex min-h-11 w-full items-center justify-between gap-3 text-left"
-          onClick={() => setConfigOpen((open) => !open)}
-        >
-          <span className="font-[family-name:var(--font-mono)] text-sm text-[var(--chalk)]">
-            {summary}
-          </span>
-          <span className="text-xs text-[var(--mute)]">{configOpen ? "收起" : "改参数"}</span>
-        </button>
-        {configOpen ? (
+        <div className="flex min-h-11 items-center gap-2">
+          {running ? (
+            <p className="min-h-11 min-w-0 flex-1 py-3 font-[family-name:var(--font-mono)] text-sm text-[var(--chalk)]">
+              {summary}
+            </p>
+          ) : (
+            <button
+              type="button"
+              className="min-h-11 min-w-0 flex-1 text-left"
+              onClick={() => setConfigOpen((open) => !open)}
+            >
+              <span className="font-[family-name:var(--font-mono)] text-sm text-[var(--chalk)]">
+                {summary}
+              </span>
+            </button>
+          )}
+          {!running ? (
+            <div className="flex shrink-0 items-center">
+              <button
+                type="button"
+                className="min-h-11 px-2 text-xs text-[var(--mute)]"
+                onClick={() => setConfigOpen((open) => !open)}
+              >
+                {configOpen ? "收起" : "改参数"}
+              </button>
+              {!configOpen && hasResult ? (
+                <button
+                  type="button"
+                  className="min-h-11 px-2 text-xs text-[var(--brass)]"
+                  onClick={() => void runAnalysis(ticker)}
+                >
+                  重新分析
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+        {configOpen && !running ? (
           <form onSubmit={onAnalyze} className="mt-3 border-t border-[var(--hairline)] pt-4">
             <label htmlFor="ticker" className="text-xs tracking-wide text-[var(--mute)] uppercase">
               标的
@@ -338,8 +395,15 @@ export function Desk({ defaults, mode, onLogout }: Props) {
 
       <div className="flex flex-1 flex-col gap-4">
         {userPrompt ? (
-          <div className="ml-8 self-end rounded-2xl rounded-br-sm bg-[var(--brass)]/15 px-4 py-3 text-sm text-[var(--chalk)]">
-            {userPrompt}
+          <div className="ml-8 self-end">
+            <div className="rounded-2xl rounded-br-sm bg-[var(--brass)]/15 px-4 py-3 text-sm text-[var(--chalk)]">
+              {userPrompt}
+            </div>
+            {cachedAt && !running ? (
+              <p className="mt-1 text-right font-[family-name:var(--font-mono)] text-[11px] text-[var(--mute)]">
+                本机留底 · {formatCachedAt(cachedAt)}
+              </p>
+            ) : null}
           </div>
         ) : (
           <p className="px-1 text-sm leading-relaxed text-[var(--mute)]">
