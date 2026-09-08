@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from option_desk.stream import stream_event
-from option_desk.web.app import _RUN_LOCK, _iter_sse, create_app
+from option_desk.web.app import _iter_sse, create_app
 
 
 @pytest.fixture
@@ -14,8 +14,6 @@ def client(monkeypatch):
     monkeypatch.setenv("OPTION_DESK_WEB_SECRET", "unit-test-secret")
     with TestClient(create_app()) as test_client:
         yield test_client
-    if _RUN_LOCK.locked():
-        _RUN_LOCK.release()
 
 
 def test_me_requires_login(client):
@@ -74,21 +72,44 @@ def test_runs_stream_after_login(client, monkeypatch):
     assert "run_finished" in body
 
 
-def test_second_run_conflict(client):
-    client.post("/api/login", json={"password": "desk-pass"})
-    assert _RUN_LOCK.acquire(blocking=False)
-    try:
-        response = client.post(
-            "/api/runs",
-            json={"tickers": ["NVDA"], "delta": 0.2, "cash": 55000},
-        )
-        assert response.status_code == 409
-    finally:
-        if _RUN_LOCK.locked():
-            _RUN_LOCK.release()
+async def _drain(stream) -> bytes:
+    chunks = []
+    async for chunk in stream:
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
-def test_disconnect_releases_run_lock(monkeypatch):
+def test_two_runs_can_proceed_together(monkeypatch):
+    started = threading.Barrier(2)
+    resume = threading.Event()
+    seen: list[str] = []
+    guard = threading.Lock()
+
+    def fake_iter(tickers, as_of=None, settings=None):
+        with guard:
+            seen.append(tickers[0])
+        yield stream_event("run_started", message="go", tickers=tickers)
+        started.wait(timeout=5)
+        resume.wait(timeout=10)
+        yield stream_event("run_finished", message="done", run={"ok": True})
+
+    monkeypatch.setattr("option_desk.web.app.iter_desk", fake_iter)
+
+    async def scenario() -> None:
+        first, second = _iter_sse(["NVDA"], 0.2, 55000), _iter_sse(["MSFT"], 0.2, 55000)
+        head1, head2 = await asyncio.gather(anext(first), anext(second))
+        assert b"run_started" in head1
+        assert b"run_started" in head2
+        resume.set()
+        rest1, rest2 = await asyncio.gather(_drain(first), _drain(second))
+        assert b"run_finished" in rest1
+        assert b"run_finished" in rest2
+        assert set(seen) == {"NVDA", "MSFT"}
+
+    asyncio.run(scenario())
+
+
+def test_disconnect_stops_stream(monkeypatch):
     resume = threading.Event()
     started = threading.Event()
 
@@ -101,19 +122,15 @@ def test_disconnect_releases_run_lock(monkeypatch):
     monkeypatch.setattr("option_desk.web.app.iter_desk", fake_iter)
 
     async def scenario() -> None:
-        assert _RUN_LOCK.acquire(blocking=False)
         stream = _iter_sse(["NVDA"], 0.2, 55000)
         try:
             first = await anext(stream)
             assert b"run_started" in first
             assert await asyncio.to_thread(started.wait, 5)
             await stream.aclose()
-            assert not _RUN_LOCK.locked()
         finally:
             resume.set()
             await stream.aclose()
-            if _RUN_LOCK.locked():
-                _RUN_LOCK.release()
 
     asyncio.run(scenario())
 

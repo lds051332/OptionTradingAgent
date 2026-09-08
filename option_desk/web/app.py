@@ -34,7 +34,6 @@ from option_desk.web.auth import (
 )
 
 TICKER_RE = re.compile(r"^[A-Za-z][A-Za-z.]{0,9}$")
-_RUN_LOCK = threading.Lock()
 
 
 class LoginBody(BaseModel):
@@ -108,14 +107,6 @@ def _dist_dir() -> Path:
     return project_root() / "web" / "dist"
 
 
-def _release_run_lock(released: list[bool], guard: threading.Lock) -> None:
-    with guard:
-        if released[0]:
-            return
-        released[0] = True
-        _RUN_LOCK.release()
-
-
 async def _iter_sse(
     tickers: list[str],
     delta: float,
@@ -128,8 +119,6 @@ async def _iter_sse(
     queue: asyncio.Queue[StreamEvent | None | BaseException] = asyncio.Queue()
     loop = asyncio.get_running_loop()
     cancel = threading.Event()
-    released = [False]
-    guard = threading.Lock()
     try:
         settings = apply_run_overrides(
             get_settings(),
@@ -160,8 +149,6 @@ async def _iter_sse(
                 push(exc)
             else:
                 push(None)
-            finally:
-                _release_run_lock(released, guard)
 
         threading.Thread(target=worker, daemon=True, name="desk-run").start()
         while True:
@@ -175,7 +162,6 @@ async def _iter_sse(
             yield item.to_sse().encode("utf-8")
     finally:
         cancel.set()
-        _release_run_lock(released, guard)
 
 
 def create_app() -> FastAPI:
@@ -202,8 +188,6 @@ def create_app() -> FastAPI:
     async def create_run(body: RunBody, request: Request) -> StreamingResponse:
         require_session(request)
         tickers, delta, cash, mode, shares, cost_basis = _validate_run(body)
-        if not _RUN_LOCK.acquire(blocking=False):
-            raise HTTPException(status_code=409, detail="已有一轮分析在进行")
 
         async def stream() -> AsyncIterator[bytes]:
             agen = _iter_sse(
