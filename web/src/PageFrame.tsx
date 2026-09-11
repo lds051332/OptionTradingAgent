@@ -1,9 +1,16 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { useI18n } from "./locale";
 import { media } from "./staticMedia";
 
 type Rail = "wechat" | "alipay" | "add";
 type QrItem = { id: Rail; label: string; src: string; alt: string; app: string };
+
+const PAYPAL_ME = "https://paypal.me/xxxdashan";
+const PAYPAL_AMOUNTS = ["0.99", "4.99", "9.99", "19.99"] as const;
+
+function paypalHref(amount?: string): string {
+  return amount ? `${PAYPAL_ME}/${amount}USD` : PAYPAL_ME;
+}
 
 function qrItem(
   id: Rail,
@@ -15,8 +22,10 @@ function qrItem(
   return src ? { id, label, src, alt, app } : undefined;
 }
 
-const HAS_PAY = Boolean(media.qrWechat || media.qrAlipay);
+const HAS_PAYPAL = true;
+const HAS_PAY = Boolean(media.qrWechat || media.qrAlipay || HAS_PAYPAL);
 const HAS_CONTACT = Boolean(media.qrAddWechat);
+const CONTACT_EMAIL = "605465435@qq.com";
 
 type OpenFn = (rail: Rail) => void;
 
@@ -89,8 +98,13 @@ function PayTicket({
       <p className="qr-kicker">Desk float</p>
       <h2>{t("frame.tipTitle")}</h2>
       <p className="qr-body">{t("frame.tipBody")}</p>
-      <QrStack rails={rails} tabs={!compact} onOpen={onOpen} />
-      <p className="qr-foot">{compact ? t("frame.tipFootCompact") : t("frame.tipFoot")}</p>
+      {rails.length > 0 ? (
+        <>
+          <QrStack rails={rails} tabs={rails.length > 1} onOpen={onOpen} />
+          <p className="qr-foot">{compact ? t("frame.tipFootCompact") : t("frame.tipFoot")}</p>
+        </>
+      ) : null}
+      {HAS_PAYPAL ? <PaypalTip compact={compact} /> : null}
     </section>
   );
 }
@@ -110,10 +124,107 @@ function ContactTicket({
       <p className="qr-kicker">Contact</p>
       <h2>{t("frame.contactTitle")}</h2>
       <p className="qr-body">{t("frame.contactBody")}</p>
+      <ContactEmail />
       <QrStack rails={[rail]} tabs={false} onOpen={onOpen} />
       <p className="qr-foot">{compact ? t("frame.contactFootCompact") : t("frame.contactFoot")}</p>
     </section>
   );
+}
+
+function PaypalTip({ compact = false }: { compact?: boolean }) {
+  const { t } = useI18n();
+  return (
+    <div className="paypal-slip">
+      <p className="paypal-kicker">{t("frame.paypal")}</p>
+      <p className="paypal-hint">{compact ? t("frame.paypalHintCompact") : t("frame.paypalHint")}</p>
+      <div className="paypal-amounts" role="group" aria-label={t("frame.paypalAmounts")}>
+        {PAYPAL_AMOUNTS.map((amount) => {
+          const label = `$${amount}`;
+          return (
+            <a
+              key={amount}
+              className="paypal-amt"
+              href={paypalHref(amount)}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={t("frame.paypalAmount", { amount: label })}
+            >
+              {label}
+            </a>
+          );
+        })}
+        <a
+          className="paypal-amt paypal-custom"
+          href={paypalHref()}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={t("frame.paypalCustomAria")}
+        >
+          {t("frame.paypalCustom")}
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function ContactEmail() {
+  const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<number>(0);
+  const [local, domain] = CONTACT_EMAIL.split("@");
+
+  useEffect(() => {
+    return () => window.clearTimeout(copiedTimer.current);
+  }, []);
+
+  async function copyEmail(event: MouseEvent<HTMLAnchorElement>) {
+    event.preventDefault();
+    const ok = await writeClipboard(CONTACT_EMAIL);
+    if (ok) {
+      setCopied(true);
+      window.clearTimeout(copiedTimer.current);
+      copiedTimer.current = window.setTimeout(() => setCopied(false), 1800);
+      return;
+    }
+    window.location.href = `mailto:${CONTACT_EMAIL}`;
+  }
+
+  return (
+    <a
+      className={`contact-email${copied ? " is-copied" : ""}`}
+      href={`mailto:${CONTACT_EMAIL}`}
+      onClick={(event) => void copyEmail(event)}
+      aria-label={`${t("frame.contactEmailLabel")} ${CONTACT_EMAIL}`}
+    >
+      <span className="contact-email-label">{t("frame.contactEmailLabel")}</span>
+      <span className="contact-email-addr">
+        {local}@<wbr />
+        {domain}
+      </span>
+      <span className="contact-email-hint" aria-live="polite">
+        {copied ? t("frame.contactEmailCopied") : t("frame.contactEmailCopy")}
+      </span>
+    </a>
+  );
+}
+
+async function writeClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const input = document.createElement("input");
+    input.value = text;
+    input.setAttribute("readonly", "");
+    input.style.position = "fixed";
+    input.style.opacity = "0";
+    document.body.appendChild(input);
+    input.select();
+    input.setSelectionRange(0, text.length);
+    const ok = document.execCommand("copy");
+    document.body.removeChild(input);
+    return ok;
+  }
 }
 
 function QrStack({

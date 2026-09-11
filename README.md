@@ -32,19 +32,19 @@ Changing the Delta anchor on the Web scales the conservative bucket by `0.11 / 0
 
 Open the desk and pick a book: cash-secured puts, or covered calls.
 
-![Two books this week](screenshots/home.png)
+![Two books this week](screenshots/home_en.png)
 
-The desk screens the chain and shows `conservative` / `standard` candidates (call book below).
+The desk screens the chain and shows `conservative` / `standard` candidates (put book below).
 
-![Screened buckets](screenshots/1.png)
+![Screened buckets](screenshots/1_en.png)
 
 The calendar gate checks earnings / FOMC / macro dates in the holding window. Event scout then looks for off-calendar gaps.
 
-![Calendar gate and event scout](screenshots/2.png)
+![Calendar gate and event scout](screenshots/2_en.png)
 
 The desk stamps only `SKIP` or `OPEN`. OPEN includes an expiration P/L chart.
 
-![Desk stamp and expiration P/L](screenshots/3.png)
+![Desk stamp and expiration P/L](screenshots/3_en.png)
 
 The chrome follows the in-page **EN / 中文** switch (saved in the browser). Each analysis sends that language, so progress lines, warnings, and LLM prose match.
 

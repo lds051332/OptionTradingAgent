@@ -6,6 +6,11 @@
 )
 
 $ErrorActionPreference = "Stop"
+# PS 5.1 treats native stderr (2>) as error records; with Stop that aborts
+# before we can install deps. Keep native failures as exit codes only.
+if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
+    $PSNativeCommandUseErrorActionPreference = $false
+}
 Set-StrictMode -Version Latest
 
 $Root = Split-Path -Parent $PSScriptRoot
@@ -131,8 +136,18 @@ function Ensure-Python {
     if (-not (Test-Path $VenvPython)) {
         throw "无法创建 .venv\Scripts\python.exe"
     }
-    & $VenvPython -c "import option_desk.web, fastapi, uvicorn" 2>$null
-    if ($LASTEXITCODE -ne 0) {
+    $needInstall = $true
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+    try {
+        & $VenvPython -c "import option_desk.web, fastapi, uvicorn" 1>$null 2>$null
+        if ($LASTEXITCODE -eq 0) { $needInstall = $false }
+    } catch {
+        $needInstall = $true
+    } finally {
+        $ErrorActionPreference = $oldEap
+    }
+    if ($needInstall) {
         Write-Step "安装 Python 依赖"
         $uv = Get-Uv
         if ($uv) {
