@@ -1,4 +1,14 @@
 import type { Defaults, StreamEvent } from "./types";
+import { getLang, tx } from "./i18n";
+
+function langHeaders(extra?: Record<string, string>): Record<string, string> {
+  const lang = getLang();
+  return {
+    "X-Option-Desk-Lang": lang,
+    "Accept-Language": lang === "zh" ? "zh-CN" : "en",
+    ...extra,
+  };
+}
 
 async function readJson<T>(res: Response): Promise<T> {
   const payload = (await res.json().catch(() => ({}))) as { detail?: string | unknown };
@@ -9,30 +19,15 @@ async function readJson<T>(res: Response): Promise<T> {
         ? detail
         : Array.isArray(detail)
           ? detail.map((item) => String((item as { msg?: string }).msg ?? item)).join("；")
-          : `请求失败 (${res.status})`;
+          : tx("api.requestFailed", { status: res.status });
     throw new Error(message);
   }
   return payload as T;
 }
 
-export async function fetchMe(): Promise<Defaults | null> {
-  const res = await fetch("/api/me", { credentials: "include" });
-  if (res.status === 401) return null;
+export async function fetchMe(): Promise<Defaults> {
+  const res = await fetch("/api/me", { credentials: "include", headers: langHeaders() });
   return readJson<Defaults>(res);
-}
-
-export async function login(password: string): Promise<void> {
-  const res = await fetch("/api/login", {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password }),
-  });
-  await readJson(res);
-}
-
-export async function logout(): Promise<void> {
-  await fetch("/api/logout", { method: "POST", credentials: "include" });
 }
 
 export async function* startRun(
@@ -43,21 +38,22 @@ export async function* startRun(
     mode?: "put" | "call";
     shares?: number;
     cost_basis?: number;
+    language?: string;
   },
   options?: { signal?: AbortSignal },
 ): AsyncGenerator<StreamEvent> {
   const res = await fetch("/api/runs", {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-    body: JSON.stringify(body),
+    headers: langHeaders({ "Content-Type": "application/json", Accept: "text/event-stream" }),
+    body: JSON.stringify({ ...body, language: body.language ?? getLang() }),
     signal: options?.signal,
   });
   if (!res.ok) {
     await readJson(res);
     return;
   }
-  if (!res.body) throw new Error("浏览器不支持流式响应");
+  if (!res.body) throw new Error(tx("api.noStream"));
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();

@@ -1,28 +1,31 @@
 import { useEffect, useState } from "react";
-import { fetchMe, logout } from "./api";
+import { fetchMe } from "./api";
 import { BrandSeal } from "./Brand";
 import { Desk } from "./Desk";
 import { Home } from "./Home";
-import { Login } from "./Login";
 import { PageFrame } from "./PageFrame";
+import { useI18n } from "./locale";
 import { useRouter } from "./router";
 import type { Defaults } from "./types";
 
-const PAGE_TITLE: Record<string, string> = {
-  "/": "摩根大山 · Option Desk",
-  "/put": "卖 Put 决策台 · 摩根大山",
-  "/call": "卖 Call 决策台 · 摩根大山",
-};
-
 export function App() {
   const { path, navigate } = useRouter();
+  const { lang, t } = useI18n();
   const [ready, setReady] = useState(false);
   const [defaults, setDefaults] = useState<Defaults | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function refresh() {
-    const me = await fetchMe();
-    setDefaults(me);
-    setReady(true);
+    setError(null);
+    try {
+      const me = await fetchMe();
+      setDefaults(me);
+    } catch (err) {
+      setDefaults(null);
+      setError(err instanceof Error ? err.message : t("common.loadFailed"));
+    } finally {
+      setReady(true);
+    }
   }
 
   useEffect(() => {
@@ -30,8 +33,13 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    document.title = PAGE_TITLE[path] ?? PAGE_TITLE["/"];
-  }, [path]);
+    const titles = {
+      "/": t("app.titleHome"),
+      "/put": t("app.titlePut"),
+      "/call": t("app.titleCall"),
+    } as const;
+    document.title = titles[path as keyof typeof titles] ?? titles["/"];
+  }, [path, t]);
 
   useEffect(() => {
     if (path !== "/" && path !== "/put" && path !== "/call") {
@@ -39,32 +47,40 @@ export function App() {
     }
   }, [path, navigate]);
 
-  function handleLogout() {
-    navigate("/", { replace: true });
-    void logout().then(() => setDefaults(null));
-  }
-
   if (!ready) {
     return (
       <div className="flex min-h-dvh flex-col items-center justify-center gap-4 px-6">
-        <BrandSeal variant="icon" size="md" alt="摩根大山" />
-        <p className="font-[family-name:var(--font-mono)] text-sm text-[var(--mute)]">正在核对会话…</p>
+        <BrandSeal variant="icon" size="md" alt={t("common.brand")} />
+        <p className="font-[family-name:var(--font-mono)] text-sm text-[var(--mute)]">{t("common.loading")}</p>
       </div>
     );
   }
 
-  const page = !defaults ? (
-    <Login onLoggedIn={() => void refresh()} />
-  ) : path === "/put" || path === "/call" ? (
-    <Desk
-      key={path}
-      defaults={defaults}
-      mode={path.slice(1) as "put" | "call"}
-      onLogout={handleLogout}
-    />
-  ) : (
-    <Home onLogout={handleLogout} />
-  );
+  if (!defaults) {
+    return (
+      <div className="flex min-h-dvh flex-col items-center justify-center gap-4 px-6 text-center">
+        <BrandSeal variant="icon" size="md" alt={t("common.brand")} />
+        <p className="max-w-sm text-sm leading-relaxed text-[var(--skip)]">{error ?? t("common.loadFailed")}</p>
+        <button
+          type="button"
+          onClick={() => {
+            setReady(false);
+            void refresh();
+          }}
+          className="min-h-11 rounded-sm bg-[var(--brass)] px-5 font-semibold text-[var(--night)]"
+        >
+          {t("common.retry")}
+        </button>
+      </div>
+    );
+  }
+
+  const page =
+    path === "/put" || path === "/call" ? (
+      <Desk key={`${path}-${lang}`} defaults={defaults} mode={path.slice(1) as "put" | "call"} />
+    ) : (
+      <Home />
+    );
 
   return <PageFrame>{page}</PageFrame>;
 }

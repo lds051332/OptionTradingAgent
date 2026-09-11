@@ -1,4 +1,6 @@
 import type { ExpirationPayoff } from "./types";
+import { useI18n } from "./locale";
+import type { MsgKey } from "./i18n";
 
 type Props = {
   ticker: string;
@@ -34,6 +36,7 @@ type AxisMark = {
 };
 
 export function PayoffChart({ ticker, payoff }: Props) {
+  const { t } = useI18n();
   const width = 640;
   const height = 248;
   const pad = { l: 58, r: 14, t: 22, b: 38 };
@@ -65,15 +68,15 @@ export function PayoffChart({ ticker, payoff }: Props) {
           .join(" ")} L ${pts[pts.length - 1].x.toFixed(1)} ${zeroY.toFixed(1)} Z`
       : "";
 
-  const marks = placeMarks(payoff, xPx);
+  const marks = placeMarks(payoff, xPx, t);
   const expiry = payoff.expiry.slice(0, 10);
   const structure =
     payoff.structure === "BULL_PUT_SPREAD"
-      ? "牛市看跌价差"
+      ? t("desk.structSpread")
       : payoff.structure === "COVERED_CALL"
-        ? "Covered Call"
-        : "CSP";
-  const lossText = payoff.loss_limited ? money(payoff.max_loss) : `${money(payoff.max_loss)} · 到 $0`;
+        ? t("desk.structCC")
+        : t("desk.structCSP");
+  const lossText = payoff.loss_limited ? money(payoff.max_loss) : t("payoff.toZero", { loss: money(payoff.max_loss) });
   const spotX = xPx(payoff.spot);
   const spotTagRight = spotX > pad.l + innerW * 0.62;
   const floorPnl = Math.min(...pnls);
@@ -83,23 +86,23 @@ export function PayoffChart({ ticker, payoff }: Props) {
   return (
     <div className="payoff-tape">
       <p className="payoff-kicker">
-        到期结算 {expiry} · {payoff.dte}DTE · {payoff.contracts} 张 · {structure}
+        {t("payoff.kicker", { expiry, dte: payoff.dte, n: payoff.contracts, structure })}
       </p>
       <dl className="payoff-stats">
         <div>
-          <dt>最大盈利</dt>
+          <dt>{t("payoff.maxProfit")}</dt>
           <dd className="text-[var(--open)]">{money(payoff.max_profit)}</dd>
         </div>
         <div>
-          <dt>盈亏平衡</dt>
+          <dt>{t("payoff.breakeven")}</dt>
           <dd>{strikeLabel(payoff.breakeven)}</dd>
         </div>
         <div>
-          <dt>最大亏损</dt>
+          <dt>{t("payoff.maxLoss")}</dt>
           <dd className="text-[var(--skip)]">{lossText}</dd>
         </div>
         <div>
-          <dt>净权利金 / 张</dt>
+          <dt>{t("payoff.credit")}</dt>
           <dd>{money(payoff.credit_per_share * 100)}</dd>
         </div>
       </dl>
@@ -107,7 +110,11 @@ export function PayoffChart({ ticker, payoff }: Props) {
         className="payoff-plot"
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label={`${ticker} ${structure}到期损益图，盈亏平衡 ${strikeLabel(payoff.breakeven)}`}
+        aria-label={t("payoff.aria", {
+          ticker,
+          structure,
+          breakeven: strikeLabel(payoff.breakeven),
+        })}
       >
         <defs>
           <clipPath id={`${uid}-up`}>
@@ -177,20 +184,20 @@ export function PayoffChart({ ticker, payoff }: Props) {
           textAnchor={spotTagRight ? "end" : "start"}
           className="payoff-spot-tag"
         >
-          现价 {strikeLabel(payoff.spot)}
+          {t("payoff.spot", { spot: strikeLabel(payoff.spot) })}
         </text>
       </svg>
       <p className="payoff-foot">
-        到期若仍在现价：{signedMoney(payoff.pnl_at_spot)}
+        {t("payoff.footAtSpot", { pnl: signedMoney(payoff.pnl_at_spot) })}
         {payoff.structure === "COVERED_CALL"
           ? payoff.assignment_cash != null
-            ? ` · 若指派按行权价卖出，收入 ${money(payoff.assignment_cash)}`
+            ? t("payoff.footCallAssign", { cash: money(payoff.assignment_cash) })
             : ""
           : payoff.assignment_cash != null
-            ? ` · 若指派需现金 ${money(payoff.assignment_cash)}`
+            ? t("payoff.footPutAssign", { cash: money(payoff.assignment_cash) })
             : ""}
-        {payoff.cost_basis != null ? ` · 成本 ${money(payoff.cost_basis, 2)}` : ""}
-        。按链上 mid 估算，非成交价；不含手续费与提前指派。
+        {payoff.cost_basis != null ? t("payoff.footCost", { cost: money(payoff.cost_basis, 2) }) : ""}
+        {t("payoff.footNote")}
       </p>
     </div>
   );
@@ -199,6 +206,7 @@ export function PayoffChart({ ticker, payoff }: Props) {
 function placeMarks(
   payoff: ExpirationPayoff,
   xPx: (spot: number) => number,
+  t: (key: MsgKey, vars?: Record<string, string | number>) => string,
 ): Array<AxisMark & { x: number }> {
   const raw: AxisMark[] = [
     { key: "be", spot: payoff.breakeven, label: `BE ${strikeLabel(payoff.breakeven)}`, tone: "be" },
@@ -208,7 +216,7 @@ function placeMarks(
     raw.push({
       key: "kl",
       spot: payoff.long_strike,
-      label: `保护 ${strikeLabel(payoff.long_strike)}`,
+      label: t("payoff.protect", { strike: strikeLabel(payoff.long_strike) }),
       tone: "strike",
     });
   }

@@ -9,33 +9,12 @@ from option_desk.web.app import _iter_sse, create_app
 
 
 @pytest.fixture
-def client(monkeypatch):
-    monkeypatch.setenv("OPTION_DESK_WEB_PASSWORD", "desk-pass")
-    monkeypatch.setenv("OPTION_DESK_WEB_SECRET", "unit-test-secret")
+def client():
     with TestClient(create_app()) as test_client:
         yield test_client
 
 
-def test_me_requires_login(client):
-    assert client.get("/api/me").status_code == 401
-
-
-def test_runs_requires_login(client):
-    response = client.post(
-        "/api/runs",
-        json={"tickers": ["NVDA"], "delta": 0.2, "cash": 55000},
-    )
-    assert response.status_code == 401
-
-
-def test_wrong_password(client):
-    response = client.post("/api/login", json={"password": "nope"})
-    assert response.status_code == 401
-
-
-def test_login_then_me(client):
-    login = client.post("/api/login", json={"password": "desk-pass"})
-    assert login.status_code == 200
+def test_me_is_open(client):
     me = client.get("/api/me")
     assert me.status_code == 200
     body = me.json()
@@ -45,22 +24,13 @@ def test_login_then_me(client):
     assert "cash" in body
 
 
-def test_missing_password_is_unavailable(monkeypatch):
-    monkeypatch.setenv("OPTION_DESK_WEB_PASSWORD", "")
-    monkeypatch.setenv("OPTION_DESK_WEB_SECRET", "unit-test-secret")
-    with TestClient(create_app()) as test_client:
-        response = test_client.post("/api/login", json={"password": "anything"})
-    assert response.status_code == 503
-
-
-def test_runs_stream_after_login(client, monkeypatch):
+def test_runs_stream(client, monkeypatch):
     def fake_iter(tickers, as_of=None, settings=None):
         yield stream_event("run_started", message="go", tickers=tickers)
         yield stream_event("desk_done", message="终审完成", desk={"decisions": [], "portfolio_note": "", "used_llm": False})
         yield stream_event("run_finished", message="done", run={"ok": True})
 
     monkeypatch.setattr("option_desk.web.app.iter_desk", fake_iter)
-    client.post("/api/login", json={"password": "desk-pass"})
     with client.stream(
         "POST",
         "/api/runs",
@@ -136,7 +106,6 @@ def test_disconnect_stops_stream(monkeypatch):
 
 
 def test_delta_out_of_range(client):
-    client.post("/api/login", json={"password": "desk-pass"})
     response = client.post(
         "/api/runs",
         json={"tickers": ["NVDA"], "delta": 0.4, "cash": 55000},
@@ -145,7 +114,6 @@ def test_delta_out_of_range(client):
 
 
 def test_call_run_requires_shares_and_basis(client):
-    client.post("/api/login", json={"password": "desk-pass"})
     missing = client.post(
         "/api/runs",
         json={"tickers": ["NVDA"], "delta": 0.2, "mode": "call"},
@@ -164,8 +132,45 @@ def test_call_run_requires_shares_and_basis(client):
     assert ok_shape.status_code == 422
 
 
-def test_login_then_me_includes_shares(client):
-    client.post("/api/login", json={"password": "desk-pass"})
+def test_me_includes_shares(client):
     body = client.get("/api/me").json()
     assert "shares" in body
     assert "cost_basis" in body
+    assert body["language"] in {"en", "zh"}
+
+
+def test_runs_uses_request_language(client, monkeypatch):
+    seen: dict[str, str] = {}
+
+    def fake_iter(tickers, as_of=None, settings=None):
+        seen["lang"] = settings.output_language
+        yield stream_event("run_started", message="go", tickers=tickers)
+        yield stream_event("run_finished", message="done", run={"ok": True})
+
+    monkeypatch.setattr("option_desk.web.app.iter_desk", fake_iter)
+    with client.stream(
+        "POST",
+        "/api/runs",
+        json={"tickers": ["NVDA"], "delta": 0.2, "cash": 55000, "language": "en"},
+        headers={"X-Option-Desk-Lang": "en"},
+    ) as response:
+        assert response.status_code == 200
+        "".join(response.iter_text())
+    assert seen["lang"] == "en"
+
+
+def test_invalid_ticker_follows_language(client):
+    zh = client.post(
+        "/api/runs",
+        json={"tickers": ["123"], "delta": 0.2, "cash": 55000},
+        headers={"X-Option-Desk-Lang": "zh"},
+    )
+    assert zh.status_code == 422
+    assert "无效标的" in zh.json()["detail"]
+    en = client.post(
+        "/api/runs",
+        json={"tickers": ["123"], "delta": 0.2, "cash": 55000},
+        headers={"X-Option-Desk-Lang": "en"},
+    )
+    assert en.status_code == 422
+    assert "Invalid ticker" in en.json()["detail"]

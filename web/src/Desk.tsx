@@ -4,6 +4,8 @@ import { BrandLockup } from "./Brand";
 import { Link } from "./router";
 import { PayoffChart } from "./PayoffChart";
 import { TickerCombobox, normalizeSymbol } from "./TickerCombobox";
+import { dateLocale, type MsgKey } from "./i18n";
+import { LangSwitch, useI18n } from "./locale";
 import { formatCachedAt, loadCachedRun, saveCachedRun } from "./runCache";
 import type {
   BucketCandidate,
@@ -20,21 +22,7 @@ import type {
 type Props = {
   defaults: Defaults;
   mode: "put" | "call";
-  onLogout: () => void;
 };
-
-const COPY = {
-  put: {
-    title: "卖 Put 决策台",
-    hint: "填好标的、Delta 和本金后开始。",
-    disclaimer: "不构成投资建议。下单前请核对成交价与被指派所需现金。",
-  },
-  call: {
-    title: "卖 Call 决策台",
-    hint: "填好标的、Delta、持股数量和成本价后开始。",
-    disclaimer: "不构成投资建议。下单前请核对成交价；被指派即按行权价卖出持股。",
-  },
-} as const;
 
 function money(value: number): string {
   return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
@@ -159,9 +147,11 @@ function applyEvent(steps: TimelineStep[], event: StreamEvent): TimelineStep[] {
   }
 }
 
-export function Desk({ defaults, mode, onLogout }: Props) {
-  const copy = COPY[mode];
-  const [seed] = useState(() => loadCachedRun(mode));
+export function Desk({ defaults, mode }: Props) {
+  const { lang, t } = useI18n();
+  const title = mode === "call" ? t("desk.callTitle") : t("desk.putTitle");
+  const hint = mode === "call" ? t("desk.callHint") : t("desk.putHint");
+  const [seed] = useState(() => loadCachedRun(mode, lang));
   const [ticker, setTicker] = useState(seed?.ticker || defaults.tickers[0] || "");
   const [delta, setDelta] = useState(seed?.delta ?? defaults.delta);
   const [cash, setCash] = useState(seed?.cash ?? defaults.cash);
@@ -186,11 +176,11 @@ export function Desk({ defaults, mode, onLogout }: Props) {
 
   const summary = useMemo(() => {
     if (mode === "call") {
-      const basis = costBasis > 0 ? `成本 $${costBasis.toFixed(2)}` : "未填成本";
-      return `${ticker || "未选标的"} · Δ${delta.toFixed(2)} · ${shares}股 · ${basis}`;
+      const basis = costBasis > 0 ? t("desk.costPrefix", { value: costBasis.toFixed(2) }) : t("desk.noCost");
+      return `${ticker || t("desk.noTicker")} · Δ${delta.toFixed(2)} · ${t("desk.sharesPart", { n: shares })} · ${basis}`;
     }
-    return `${ticker || "未选标的"} · Δ${delta.toFixed(2)} · ${compactCash(cash)}`;
-  }, [mode, ticker, delta, cash, shares, costBasis]);
+    return `${ticker || t("desk.noTicker")} · Δ${delta.toFixed(2)} · ${compactCash(cash)}`;
+  }, [mode, ticker, delta, cash, shares, costBasis, t]);
 
   const verdict = steps.find((step) => step.id === "desk" && step.status === "done")?.desk;
   const hasResult = steps.length > 0 || Boolean(userPrompt);
@@ -213,8 +203,13 @@ export function Desk({ defaults, mode, onLogout }: Props) {
     setConfigOpen(false);
     const prompt =
       mode === "call"
-        ? `分析 ${symbol} · Δ ${delta.toFixed(2)} · ${shares}股 · 成本 $${costBasis.toFixed(2)}`
-        : `分析 ${symbol} · Δ ${delta.toFixed(2)} · 本金 $${money(cash)}`;
+        ? t("desk.promptCall", {
+            symbol,
+            delta: delta.toFixed(2),
+            shares,
+            cost: costBasis.toFixed(2),
+          })
+        : t("desk.promptPut", { symbol, delta: delta.toFixed(2), cash: money(cash) });
     setUserPrompt(prompt);
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -240,7 +235,7 @@ export function Desk({ defaults, mode, onLogout }: Props) {
         aborted = true;
         return;
       }
-      const message = err instanceof Error ? err.message : "分析失败";
+      const message = err instanceof Error ? err.message : t("desk.failed");
       latestError = message;
       setError(message);
       latest = applyEvent(latest, { type: "run_error", message, ticker: null, data: {} });
@@ -252,6 +247,7 @@ export function Desk({ defaults, mode, onLogout }: Props) {
     if (aborted) return;
     const stored = saveCachedRun({
       mode,
+      language: lang,
       ticker: symbol,
       delta,
       cash,
@@ -266,22 +262,13 @@ export function Desk({ defaults, mode, onLogout }: Props) {
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-2xl flex-col px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))]">
-      <header className="mb-4 flex items-center justify-between gap-3">
-        <BrandLockup title={copy.title} onHome={stopRun} />
-        <div className="flex items-center gap-1">
+      <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <BrandLockup title={title} onHome={stopRun} />
+        <div className="flex shrink-0 items-center gap-2">
+          <LangSwitch />
           <Link to="/" onClick={stopRun} className="inline-flex min-h-11 items-center px-2 text-sm text-[var(--mute)]">
-            返回
+            {t("common.back")}
           </Link>
-          <button
-            type="button"
-            onClick={() => {
-              stopRun();
-              onLogout();
-            }}
-            className="min-h-11 px-2 text-sm text-[var(--mute)]"
-          >
-            退出
-          </button>
         </div>
       </header>
 
@@ -309,7 +296,7 @@ export function Desk({ defaults, mode, onLogout }: Props) {
                 className="min-h-11 px-2 text-xs text-[var(--mute)]"
                 onClick={() => setConfigOpen((open) => !open)}
               >
-                {configOpen ? "收起" : "改参数"}
+                {configOpen ? t("desk.collapse") : t("desk.editParams")}
               </button>
               {!configOpen && hasResult ? (
                 <button
@@ -317,7 +304,7 @@ export function Desk({ defaults, mode, onLogout }: Props) {
                   className="min-h-11 px-2 text-xs text-[var(--brass)]"
                   onClick={() => void runAnalysis(ticker)}
                 >
-                  重新分析
+                  {t("desk.rerun")}
                 </button>
               ) : null}
             </div>
@@ -326,12 +313,12 @@ export function Desk({ defaults, mode, onLogout }: Props) {
         {configOpen && !running ? (
           <form onSubmit={onAnalyze} className="mt-3 border-t border-[var(--hairline)] pt-4">
             <label htmlFor="ticker" className="text-xs tracking-wide text-[var(--mute)] uppercase">
-              标的
+              {t("desk.ticker")}
             </label>
             <TickerCombobox id="ticker" value={ticker} onChange={setTicker} />
             <div className="mt-4 grid grid-cols-2 gap-3">
               <label className="block">
-                <span className="text-xs tracking-wide text-[var(--mute)] uppercase">Delta 锚</span>
+                <span className="text-xs tracking-wide text-[var(--mute)] uppercase">{t("desk.delta")}</span>
                 <input
                   type="number"
                   step="0.01"
@@ -344,7 +331,7 @@ export function Desk({ defaults, mode, onLogout }: Props) {
               </label>
               {mode === "call" ? (
                 <label className="block">
-                  <span className="text-xs tracking-wide text-[var(--mute)] uppercase">持股数量</span>
+                  <span className="text-xs tracking-wide text-[var(--mute)] uppercase">{t("desk.shares")}</span>
                   <input
                     type="number"
                     min={100}
@@ -356,7 +343,7 @@ export function Desk({ defaults, mode, onLogout }: Props) {
                 </label>
               ) : (
                 <label className="block">
-                  <span className="text-xs tracking-wide text-[var(--mute)] uppercase">本金 USD</span>
+                  <span className="text-xs tracking-wide text-[var(--mute)] uppercase">{t("desk.cash")}</span>
                   <input
                     type="number"
                     min={1000}
@@ -370,14 +357,14 @@ export function Desk({ defaults, mode, onLogout }: Props) {
             </div>
             {mode === "call" ? (
               <label className="mt-3 block">
-                <span className="text-xs tracking-wide text-[var(--mute)] uppercase">成本价 USD</span>
+                <span className="text-xs tracking-wide text-[var(--mute)] uppercase">{t("desk.costBasis")}</span>
                 <input
                   type="number"
                   min={0.01}
                   step={0.01}
                   value={costBasis || ""}
                   onChange={(e) => setCostBasis(Number(e.target.value))}
-                  placeholder="买入均价"
+                  placeholder={t("desk.costPlaceholder")}
                   className="mt-2 min-h-11 w-full rounded-sm border border-[var(--hairline)] bg-[var(--night)] px-3 font-[family-name:var(--font-mono)]"
                 />
               </label>
@@ -387,7 +374,7 @@ export function Desk({ defaults, mode, onLogout }: Props) {
               disabled={running || !ticker || (mode === "call" && (shares < 100 || costBasis <= 0))}
               className="mt-4 min-h-11 w-full rounded-sm bg-[var(--brass)] font-semibold text-[var(--night)] disabled:opacity-50"
             >
-              {running ? "分析进行中…" : "开始分析"}
+              {running ? t("desk.running") : t("desk.start")}
             </button>
           </form>
         ) : null}
@@ -401,13 +388,13 @@ export function Desk({ defaults, mode, onLogout }: Props) {
             </div>
             {cachedAt && !running ? (
               <p className="mt-1 text-right font-[family-name:var(--font-mono)] text-[11px] text-[var(--mute)]">
-                本机留底 · {formatCachedAt(cachedAt)}
+                {t("desk.cached", { when: formatCachedAt(cachedAt, dateLocale(lang)) })}
               </p>
             ) : null}
           </div>
         ) : (
           <p className="px-1 text-sm leading-relaxed text-[var(--mute)]">
-            {copy.hint}
+            {hint}
           </p>
         )}
 
@@ -449,15 +436,16 @@ function WorkingReel({ label }: { label: string }) {
 }
 
 function StepCard({ step, mode }: { step: TimelineStep; mode: "put" | "call" }) {
+  const { t } = useI18n();
   const live = step.status === "running";
   return (
     <article className={`ticket px-4 py-4 pl-7 ${live ? "ticket-live" : ""}`}>
       <header className="mb-2 flex items-center gap-2">
         <StatusMark status={step.status} />
-        <h2 className="font-[family-name:var(--font-display)] text-lg">{stepTitle(step)}</h2>
+        <h2 className="font-[family-name:var(--font-display)] text-lg">{stepTitle(step, t)}</h2>
         {live ? (
           <span className="ml-auto font-[family-name:var(--font-mono)] text-[11px] tracking-[0.18em] text-[var(--brass)] uppercase">
-            工作中
+            {t("desk.working")}
           </span>
         ) : null}
       </header>
@@ -477,16 +465,17 @@ function StepCard({ step, mode }: { step: TimelineStep; mode: "put" | "call" }) 
   );
 }
 
-function stepTitle(step: TimelineStep): string {
-  if (step.type === "screen") return `筛链 ${step.ticker ?? ""}`.trim();
-  if (step.type === "calendar") return `日历 ${step.ticker ?? ""}`.trim();
-  if (step.type === "scout") return "事件侦察";
-  if (step.type === "desk") return "终审";
-  if (step.type === "error") return "中断";
+function stepTitle(step: TimelineStep, t: (key: MsgKey, vars?: Record<string, string | number>) => string): string {
+  if (step.type === "screen") return t("desk.stepScreen", { ticker: step.ticker ?? "" }).trim();
+  if (step.type === "calendar") return t("desk.stepCalendar", { ticker: step.ticker ?? "" }).trim();
+  if (step.type === "scout") return t("desk.stepScout");
+  if (step.type === "desk") return t("desk.stepDesk");
+  if (step.type === "error") return t("desk.stepError");
   return step.type;
 }
 
 function Buckets({ snapshot, mode }: { snapshot: TickerSnapshot; mode: "put" | "call" }) {
+  const { t } = useI18n();
   const buckets = Object.values(snapshot.buckets);
   const call = mode === "call";
   const lastPrint = buckets.some((bucket) => bucket.csp.quote_source === "last");
@@ -497,17 +486,13 @@ function Buckets({ snapshot, mode }: { snapshot: TickerSnapshot; mode: "put" | "
   return (
     <div className="mt-3 overflow-x-auto">
       <p className="font-[family-name:var(--font-mono)] text-xs text-[var(--brass)]">
-        {snapshot.ticker} 现价 {snapshot.spot.toFixed(2)} · 候选档位
+        {t("desk.spotBuckets", { ticker: snapshot.ticker, spot: snapshot.spot.toFixed(2) })}
       </p>
       {lastPrint ? (
         <div className="tape-delay">
-          <p className="tape-delay-kicker">Last print · 非盘口</p>
-          <p>
-            买卖价为空，权利金用最新成交价，价差未知。Yahoo 盘后常见。下单前必须核实现价与买卖盘。
-          </p>
-          {ivNote ? (
-            <p>链上 IV 不可用，Δ 由成交价反推（失败则套下限），只用于选档，不是交易所 Greek。</p>
-          ) : null}
+          <p className="tape-delay-kicker">{t("desk.lastPrintKicker")}</p>
+          <p>{t("desk.lastPrintBody")}</p>
+          {ivNote ? <p>{t("desk.ivNote")}</p> : null}
         </div>
       ) : null}
       {otherNotes.length ? (
@@ -518,15 +503,15 @@ function Buckets({ snapshot, mode }: { snapshot: TickerSnapshot; mode: "put" | "
         </ul>
       ) : null}
       {buckets.length === 0 ? (
-        <p className="mt-2 text-sm text-[var(--mute)]">{call ? "两档都没有合格 call。" : "两档都没有合格合约。"}</p>
+        <p className="mt-2 text-sm text-[var(--mute)]">{call ? t("desk.noCalls") : t("desk.noPuts")}</p>
       ) : (
         <table className="mt-2 w-full min-w-[28rem] text-left text-xs">
           <thead className="text-[var(--mute)]">
             <tr>
-              <th className="py-1 font-medium">档位</th>
-              <th className="py-1 font-medium">合约</th>
+              <th className="py-1 font-medium">{t("desk.colBucket")}</th>
+              <th className="py-1 font-medium">{t("desk.colContract")}</th>
               <th className="py-1 font-medium">Δ</th>
-              <th className="py-1 font-medium">权利金</th>
+              <th className="py-1 font-medium">{t("desk.colPremium")}</th>
               <th className="py-1 font-medium">{call ? "CC" : "CSP"}</th>
             </tr>
           </thead>
@@ -542,12 +527,17 @@ function Buckets({ snapshot, mode }: { snapshot: TickerSnapshot; mode: "put" | "
 }
 
 function BucketRow({ bucket, call }: { bucket: BucketCandidate; call: boolean }) {
+  const { t } = useI18n();
   const spread = bucket.spread
-    ? `价差 ${bucket.spread.long.strike} / ${bucket.spread.contracts}张`
-    : "无价差";
+    ? t("desk.spread", { strike: bucket.spread.long.strike, n: bucket.spread.contracts })
+    : t("desk.noSpread");
   const last = bucket.csp.quote_source === "last";
   const ivMark =
-    bucket.csp.iv_source === "implied" ? "Δ反推" : bucket.csp.iv_source === "floored" ? "IV下限" : null;
+    bucket.csp.iv_source === "implied"
+      ? t("desk.ivImplied")
+      : bucket.csp.iv_source === "floored"
+        ? t("desk.ivFloored")
+        : null;
   return (
     <tr className="border-t border-[var(--hairline)]">
       <td className="py-2">{bucket.bucket}</td>
@@ -558,17 +548,19 @@ function BucketRow({ bucket, call }: { bucket: BucketCandidate; call: boolean })
       </td>
       <td className="py-2">
         ${money(bucket.premium_per_contract)}
-        {last ? <span className="quote-mark">成交价</span> : null}
+        {last ? <span className="quote-mark">{t("desk.lastMark")}</span> : null}
       </td>
       <td className="py-2">
         {call ? (
           <>
-            {bucket.csp_contracts}张
-            <div className="text-[10px] text-[var(--mute)]">行权价卖出 ${money(bucket.assignment_cash)}</div>
+            {t("desk.contracts", { n: bucket.csp_contracts })}
+            <div className="text-[10px] text-[var(--mute)]">
+              {t("desk.assignAtStrike", { cash: money(bucket.assignment_cash) })}
+            </div>
           </>
         ) : (
           <>
-            {bucket.csp_contracts}张 · ${money(bucket.assignment_cash)}
+            {t("desk.contracts", { n: bucket.csp_contracts })} · ${money(bucket.assignment_cash)}
             <div className="text-[10px] text-[var(--mute)]">{spread}</div>
           </>
         )}
@@ -578,20 +570,21 @@ function BucketRow({ bucket, call }: { bucket: BucketCandidate; call: boolean })
 }
 
 function CalendarBlock({ calendar }: { calendar: CalendarGate }) {
+  const { t } = useI18n();
   return (
     <div className="mt-3 text-sm">
       <p>
-        持有窗口 {calendar.holding_start} → {calendar.holding_end}
+        {t("desk.holding", { start: calendar.holding_start, end: calendar.holding_end })}
       </p>
       {calendar.hard_skip ? (
-        <p className="mt-1 text-[var(--skip)]">{calendar.hard_reasons.join("；") || "硬性跳过"}</p>
+        <p className="mt-1 text-[var(--skip)]">{calendar.hard_reasons.join("; ") || t("desk.hardSkip")}</p>
       ) : calendar.soft_macros.length ? (
         <p className="mt-1 text-[var(--brass)]">
-          软宏观{" "}
+          {t("desk.softMacro")}{" "}
           {calendar.soft_macros.map((item) => `${item.kind} ${item.event_date}`).join(" · ")}
         </p>
       ) : (
-        <p className="mt-1 text-[var(--mute)]">无硬日历冲突</p>
+        <p className="mt-1 text-[var(--mute)]">{t("desk.noCalendar")}</p>
       )}
     </div>
   );
@@ -614,8 +607,9 @@ function Hits({ hits }: { hits: SearchHit[] }) {
 }
 
 function Events({ events }: { events: ScoutedEvent[] }) {
+  const { t } = useI18n();
   if (events.length === 0) {
-    return <p className="mt-3 text-sm text-[var(--mute)]">没有需要跟进的日历外事件。</p>;
+    return <p className="mt-3 text-sm text-[var(--mute)]">{t("desk.noEvents")}</p>;
   }
   return (
     <ul className="mt-3 space-y-2">
@@ -625,26 +619,27 @@ function Events({ events }: { events: ScoutedEvent[] }) {
             {event.action} / {event.mechanism}
           </span>
           <p>{event.title}</p>
-          <p className="text-xs text-[var(--mute)]">{event.expected_time || "无日期"}</p>
+          <p className="text-xs text-[var(--mute)]">{event.expected_time || t("desk.undated")}</p>
         </li>
       ))}
     </ul>
   );
 }
 
-function structureLabel(structure: string | null): string {
-  if (structure === "BULL_PUT_SPREAD") return "牛市看跌价差";
-  if (structure === "COVERED_CALL") return "Covered Call";
-  if (structure === "CSP") return "CSP";
+function structureLabel(structure: string | null, t: (key: MsgKey) => string): string {
+  if (structure === "BULL_PUT_SPREAD") return t("desk.structSpread");
+  if (structure === "COVERED_CALL") return t("desk.structCC");
+  if (structure === "CSP") return t("desk.structCSP");
   return structure ?? "";
 }
 
 function VerdictCard({ desk, mode }: { desk: DeskOutput; mode: "put" | "call" }) {
-  const copy = COPY[mode];
+  const { t } = useI18n();
+  const disclaimer = mode === "call" ? t("desk.callDisclaimer") : t("desk.putDisclaimer");
   return (
     <section className="ticket px-4 py-5 pl-7">
       <p className="font-[family-name:var(--font-mono)] text-[11px] tracking-[0.22em] text-[var(--brass)] uppercase">
-        终审盖章
+        {t("desk.verdict")}
       </p>
       <div className="mt-4 flex flex-col gap-5">
         {desk.decisions.map((decision) => (
@@ -653,7 +648,7 @@ function VerdictCard({ desk, mode }: { desk: DeskOutput; mode: "put" | "call" })
               <div className="min-w-0">
                 <p className="font-[family-name:var(--font-mono)] text-sm text-[var(--mute)]">
                   {decision.ticker}
-                  {decision.structure ? ` · ${structureLabel(decision.structure)}` : ""}
+                  {decision.structure ? ` · ${structureLabel(decision.structure, t)}` : ""}
                   {decision.delta_bucket ? ` · ${decision.delta_bucket}` : ""}
                 </p>
                 {decision.contract_id ? (
@@ -681,7 +676,7 @@ function VerdictCard({ desk, mode }: { desk: DeskOutput; mode: "put" | "call" })
           {desk.portfolio_note}
         </p>
       ) : null}
-      <p className="mt-3 text-xs text-[var(--mute)]">{copy.disclaimer}</p>
+      <p className="mt-3 text-xs text-[var(--mute)]">{disclaimer}</p>
     </section>
   );
 }

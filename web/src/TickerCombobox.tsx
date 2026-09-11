@@ -6,6 +6,8 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
+import { tickerName } from "./i18n";
+import { useI18n } from "./locale";
 
 export type Underlying = {
   symbol: string;
@@ -13,30 +15,30 @@ export type Underlying = {
 };
 
 /** Options-volume / retail-heat leaders among US stocks and ETFs. */
-export const HOT_UNDERLYINGS: Underlying[] = [
-  { symbol: "SPY", name: "标普 500 ETF" },
-  { symbol: "QQQ", name: "纳指 100 ETF" },
-  { symbol: "NVDA", name: "英伟达" },
-  { symbol: "TSLA", name: "特斯拉" },
-  { symbol: "AAPL", name: "苹果" },
-  { symbol: "AMZN", name: "亚马逊" },
-  { symbol: "MSFT", name: "微软" },
-  { symbol: "META", name: "Meta" },
-  { symbol: "AMD", name: "超微" },
-  { symbol: "IWM", name: "罗素 2000 ETF" },
-  { symbol: "GOOGL", name: "谷歌" },
-  { symbol: "NFLX", name: "奈飞" },
-  { symbol: "AVGO", name: "博通" },
-  { symbol: "PLTR", name: "Palantir" },
-  { symbol: "TQQQ", name: "三倍做多纳指" },
-  { symbol: "IBIT", name: "比特币现货 ETF" },
-  { symbol: "COIN", name: "Coinbase" },
-  { symbol: "SOXL", name: "三倍做多半导体" },
-  { symbol: "MSTR", name: "Strategy" },
-  { symbol: "HOOD", name: "Robinhood" },
-];
+export const HOT_SYMBOLS = [
+  "SPY",
+  "QQQ",
+  "NVDA",
+  "TSLA",
+  "AAPL",
+  "AMZN",
+  "MSFT",
+  "META",
+  "AMD",
+  "IWM",
+  "GOOGL",
+  "NFLX",
+  "AVGO",
+  "PLTR",
+  "TQQQ",
+  "IBIT",
+  "COIN",
+  "SOXL",
+  "MSTR",
+  "HOOD",
+] as const;
 
-const RANK = new Map(HOT_UNDERLYINGS.map((item, index) => [item.symbol, index + 1]));
+const RANK = new Map(HOT_SYMBOLS.map((symbol, index) => [symbol, index + 1]));
 
 export function normalizeSymbol(raw: string): string {
   return raw.trim().toUpperCase().replace(/[^A-Z.]/g, "");
@@ -51,6 +53,7 @@ type Props = {
 type Row = Underlying & { rank: number; custom?: boolean };
 
 export function TickerCombobox({ id, value, onChange }: Props) {
+  const { lang, t } = useI18n();
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
@@ -63,23 +66,24 @@ export function TickerCombobox({ id, value, onChange }: Props) {
   const rows = useMemo<Row[]>(() => {
     const typed = normalizeSymbol(query);
     const nameQ = query.trim().toLowerCase();
-    const pool = filtering
-      ? HOT_UNDERLYINGS.filter((item) => {
+    const pool = HOT_SYMBOLS.map((symbol) => ({ symbol, name: tickerName(lang, symbol) }));
+    const filtered = filtering
+      ? pool.filter((item) => {
           const symbolHit = typed.length > 0 && item.symbol.includes(typed);
           const nameHit = nameQ.length > 0 && item.name.toLowerCase().includes(nameQ);
           return symbolHit || nameHit;
         })
-      : HOT_UNDERLYINGS;
-    const mapped: Row[] = pool.map((item) => ({
+      : pool;
+    const mapped: Row[] = filtered.map((item) => ({
       ...item,
       rank: RANK.get(item.symbol) ?? 0,
     }));
-    const known = HOT_UNDERLYINGS.some((item) => item.symbol === typed);
+    const known = HOT_SYMBOLS.some((symbol) => symbol === typed);
     if (typed && !known) {
-      return [{ symbol: typed, name: "使用该代码", rank: 0, custom: true }, ...mapped];
+      return [{ symbol: typed, name: t("ticker.custom"), rank: 0, custom: true }, ...mapped];
     }
     return mapped;
-  }, [filtering, query]);
+  }, [filtering, lang, query, t]);
 
   useEffect(() => {
     if (!open) setQuery(value);
@@ -112,7 +116,7 @@ export function TickerCombobox({ id, value, onChange }: Props) {
   }
 
   function openMenu() {
-    const idx = HOT_UNDERLYINGS.findIndex((item) => item.symbol === value);
+    const idx = HOT_SYMBOLS.findIndex((symbol) => symbol === value);
     setQuery(value);
     setFiltering(false);
     setActive(Math.max(idx, 0));
@@ -177,7 +181,7 @@ export function TickerCombobox({ id, value, onChange }: Props) {
           autoCapitalize="characters"
           spellCheck={false}
           value={query}
-          placeholder="输入或选择，如 NVDA"
+          placeholder={t("ticker.placeholder")}
           onChange={(event) => {
             const next = event.target.value;
             setQuery(next);
@@ -195,7 +199,7 @@ export function TickerCombobox({ id, value, onChange }: Props) {
         <button
           type="button"
           tabIndex={-1}
-          aria-label={open ? "收起标的列表" : "打开标的列表"}
+          aria-label={open ? t("ticker.closeList") : t("ticker.openList")}
           onClick={() => {
             if (open) {
               commit(query);
@@ -219,7 +223,7 @@ export function TickerCombobox({ id, value, onChange }: Props) {
           className="ticker-menu absolute z-20 mt-1 max-h-[min(18rem,50dvh)] w-full overflow-y-auto border border-[var(--hairline)] bg-[var(--blotter)] py-1 shadow-[0_16px_40px_rgba(0,0,0,0.35)]"
         >
           {rows.length === 0 ? (
-            <li className="px-3 py-3 text-sm text-[var(--mute)]">没有匹配，继续输入自定义代码</li>
+            <li className="px-3 py-3 text-sm text-[var(--mute)]">{t("ticker.empty")}</li>
           ) : (
             rows.map((row, index) => {
               const selected = row.symbol === value && !row.custom;
@@ -247,7 +251,7 @@ export function TickerCombobox({ id, value, onChange }: Props) {
                   <span className="min-w-0 truncate text-sm text-[var(--mute)]">{row.name}</span>
                   {selected ? (
                     <span className="ml-auto font-[family-name:var(--font-mono)] text-[11px] text-[var(--brass)]">
-                      当前
+                      {t("ticker.current")}
                     </span>
                   ) : null}
                 </li>

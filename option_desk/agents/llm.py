@@ -16,7 +16,7 @@ def make_llm(settings: Settings, endpoint: LLMEndpoint | None = None):
     }
     if endpoint.base_url:
         kwargs["base_url"] = endpoint.base_url
-    # deepseek-v4-flash thinking mode rejects tool_choice; disable it so
+    # deepseek-flash thinking mode rejects tool_choice; disable it so
     # json_mode / function calling can work.
     if endpoint.provider == "deepseek":
         kwargs["extra_body"] = {"thinking": {"type": "disabled"}}

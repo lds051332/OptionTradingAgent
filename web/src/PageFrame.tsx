@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useI18n } from "./locale";
 import { media } from "./staticMedia";
 
 type Rail = "wechat" | "alipay" | "add";
@@ -14,19 +15,30 @@ function qrItem(
   return src ? { id, label, src, alt, app } : undefined;
 }
 
-const PAY_RAILS = [
-  qrItem("wechat", media.qrWechat, "微信", "微信收款码", "微信"),
-  qrItem("alipay", media.qrAlipay, "支付宝", "支付宝收款码", "支付宝"),
-].filter((item): item is QrItem => item != null);
-
-const CONTACT_RAIL = qrItem("add", media.qrAddWechat, "加微信", "个人微信二维码", "微信");
-const ALL_RAILS = CONTACT_RAIL ? [...PAY_RAILS, CONTACT_RAIL] : PAY_RAILS;
-const HAS_PAY = PAY_RAILS.length > 0;
-const HAS_CONTACT = CONTACT_RAIL != null;
+const HAS_PAY = Boolean(media.qrWechat || media.qrAlipay);
+const HAS_CONTACT = Boolean(media.qrAddWechat);
 
 type OpenFn = (rail: Rail) => void;
 
+function useRails(): { pay: QrItem[]; contact?: QrItem; all: QrItem[] } {
+  const { t } = useI18n();
+  const pay = [
+    qrItem("wechat", media.qrWechat, t("frame.wechat"), t("frame.wechatAlt"), t("frame.wechat")),
+    qrItem("alipay", media.qrAlipay, t("frame.alipay"), t("frame.alipayAlt"), t("frame.alipay")),
+  ].filter((item): item is QrItem => item != null);
+  const contact = qrItem(
+    "add",
+    media.qrAddWechat,
+    t("frame.addWechat"),
+    t("frame.addWechatAlt"),
+    t("frame.wechat"),
+  );
+  return { pay, contact, all: contact ? [...pay, contact] : pay };
+}
+
 export function PageFrame({ children }: { children: ReactNode }) {
+  const { t } = useI18n();
+  const rails = useRails();
   const [rail, setRail] = useState<Rail | null>(null);
   const frameClass = [
     "page-frame",
@@ -39,52 +51,67 @@ export function PageFrame({ children }: { children: ReactNode }) {
   return (
     <div className={frameClass}>
       {HAS_PAY ? (
-        <aside className="page-rail page-rail-pay" aria-label="打赏">
-          <PayTicket compact onOpen={setRail} />
+        <aside className="page-rail page-rail-pay" aria-label={t("frame.payLabel")}>
+          <PayTicket compact onOpen={setRail} rails={rails.pay} />
         </aside>
       ) : null}
       <div className="page-main">{children}</div>
-      {HAS_CONTACT ? (
-        <aside className="page-rail page-rail-contact" aria-label="加微信">
-          <ContactTicket compact onOpen={setRail} />
+      {HAS_CONTACT && rails.contact ? (
+        <aside className="page-rail page-rail-contact" aria-label={t("frame.contactLabel")}>
+          <ContactTicket compact onOpen={setRail} rail={rails.contact} />
         </aside>
       ) : null}
       {HAS_PAY || HAS_CONTACT ? (
         <div className="page-dock">
-          {HAS_PAY ? <PayTicket onOpen={setRail} /> : null}
-          {HAS_CONTACT ? <ContactTicket onOpen={setRail} /> : null}
+          {HAS_PAY ? <PayTicket onOpen={setRail} rails={rails.pay} /> : null}
+          {HAS_CONTACT && rails.contact ? <ContactTicket onOpen={setRail} rail={rails.contact} /> : null}
         </div>
       ) : null}
-      {ALL_RAILS.length > 0 ? (
-        <QrDialog rail={rail} onRail={setRail} onClose={() => setRail(null)} />
+      {rails.all.length > 0 ? (
+        <QrDialog rails={rails.all} rail={rail} onRail={setRail} onClose={() => setRail(null)} />
       ) : null}
     </div>
   );
 }
 
-function PayTicket({ compact = false, onOpen }: { compact?: boolean; onOpen: OpenFn }) {
+function PayTicket({
+  compact = false,
+  onOpen,
+  rails,
+}: {
+  compact?: boolean;
+  onOpen: OpenFn;
+  rails: QrItem[];
+}) {
+  const { t } = useI18n();
   return (
     <section className={`ticket tip-slip qr-ticket${compact ? " qr-ticket-compact" : ""}`}>
       <p className="qr-kicker">Desk float</p>
-      <h2>打赏</h2>
-      <p className="qr-body">即将失业的贫穷码农，服务器费用和 token 都是我自掏，随意打赏，万分感谢。</p>
-      <QrStack rails={PAY_RAILS} tabs={!compact} onOpen={onOpen} />
-      <p className="qr-foot">
-        {compact ? "点开放大，长按保存。" : "另一部手机可以直接扫。这部手机请点开放大，长按保存后再用微信或支付宝从相册识别。"}
-      </p>
+      <h2>{t("frame.tipTitle")}</h2>
+      <p className="qr-body">{t("frame.tipBody")}</p>
+      <QrStack rails={rails} tabs={!compact} onOpen={onOpen} />
+      <p className="qr-foot">{compact ? t("frame.tipFootCompact") : t("frame.tipFoot")}</p>
     </section>
   );
 }
 
-function ContactTicket({ compact = false, onOpen }: { compact?: boolean; onOpen: OpenFn }) {
-  if (!CONTACT_RAIL) return null;
+function ContactTicket({
+  compact = false,
+  onOpen,
+  rail,
+}: {
+  compact?: boolean;
+  onOpen: OpenFn;
+  rail: QrItem;
+}) {
+  const { t } = useI18n();
   return (
     <section className={`ticket qr-ticket qr-ticket-contact${compact ? " qr-ticket-compact" : ""}`}>
       <p className="qr-kicker">Contact</p>
-      <h2>加微信</h2>
-      <p className="qr-body">报 bug、想加功能、或者想聊聊投资，都欢迎加我微信。</p>
-      <QrStack rails={[CONTACT_RAIL]} tabs={false} onOpen={onOpen} />
-      <p className="qr-foot">{compact ? "点开放大，长按保存。" : "另一部手机可以直接扫。这部手机请点开放大，长按保存后用微信从相册识别。"}</p>
+      <h2>{t("frame.contactTitle")}</h2>
+      <p className="qr-body">{t("frame.contactBody")}</p>
+      <QrStack rails={[rail]} tabs={false} onOpen={onOpen} />
+      <p className="qr-foot">{compact ? t("frame.contactFootCompact") : t("frame.contactFoot")}</p>
     </section>
   );
 }
@@ -98,12 +125,13 @@ function QrStack({
   tabs: boolean;
   onOpen: OpenFn;
 }) {
+  const { t } = useI18n();
   const [preview, setPreview] = useState<Rail>(rails[0]?.id ?? "wechat");
   if (rails.length === 0) return null;
   return (
     <div className="qr-stack">
       {tabs && rails.length > 1 ? (
-        <div className="tip-tabs tip-preview-tabs" role="tablist" aria-label="收款方式">
+        <div className="tip-tabs tip-preview-tabs" role="tablist" aria-label={t("frame.payMethods")}>
           {rails.map((item) => (
             <button
               key={item.id}
@@ -128,7 +156,7 @@ function QrStack({
           >
             <span className="tip-rail-label">{item.label}</span>
             <img src={item.src} alt={item.alt} width={432} height={450} draggable={false} />
-            <span className="tip-rail-open">点开放大</span>
+            <span className="tip-rail-open">{t("frame.openQr")}</span>
           </button>
         ))}
       </div>
@@ -137,17 +165,20 @@ function QrStack({
 }
 
 function QrDialog({
+  rails,
   rail,
   onRail,
   onClose,
 }: {
+  rails: QrItem[];
   rail: Rail | null;
   onRail: (rail: Rail) => void;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
-  const current = ALL_RAILS.find((item) => item.id === rail) ?? ALL_RAILS[0];
+  const current = rails.find((item) => item.id === rail) ?? rails[0];
   const pay = current.id !== "add";
 
   useEffect(() => {
@@ -174,20 +205,20 @@ function QrDialog({
               {pay ? "Desk float" : "Contact"}
             </p>
             <h2 id={titleId} className="mt-1 font-[family-name:var(--font-display)] text-2xl text-[var(--chalk)]">
-              {pay ? "打赏" : "加微信"}
+              {pay ? t("frame.tipTitle") : t("frame.contactTitle")}
             </h2>
           </div>
           <button type="button" className="tip-dialog-close" onClick={onClose}>
-            关闭
+            {t("frame.close")}
           </button>
         </div>
-        {ALL_RAILS.length > 1 ? (
+        {rails.length > 1 ? (
           <div
-            className={`tip-tabs tip-dialog-tabs${ALL_RAILS.length === 3 ? " tip-tabs-trio" : ""}`}
+            className={`tip-tabs tip-dialog-tabs${rails.length === 3 ? " tip-tabs-trio" : ""}`}
             role="tablist"
-            aria-label="二维码"
+            aria-label={t("frame.qrLabel")}
           >
-            {ALL_RAILS.map((item) => (
+            {rails.map((item) => (
               <button
                 key={item.id}
                 type="button"
@@ -210,7 +241,7 @@ function QrDialog({
           className="tip-dialog-qr"
         />
         <p className="mt-3 text-center text-[12px] leading-relaxed text-[var(--mute)]">
-          长按保存到相册，打开{current.app}从相册扫一扫。
+          {t("frame.saveScan", { app: current.app })}
         </p>
       </div>
     </dialog>

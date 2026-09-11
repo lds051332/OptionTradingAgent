@@ -1,7 +1,8 @@
 import type { TimelineStep } from "./types";
 
 export type CachedRun = {
-  v: 1;
+  v: 2;
+  language: string;
   mode: "put" | "call";
   ticker: string;
   delta: number;
@@ -14,10 +15,10 @@ export type CachedRun = {
   savedAt: string;
 };
 
-const VERSION = 1 as const;
+const VERSION = 2 as const;
 
-function storageKey(mode: "put" | "call"): string {
-  return `option-desk:last-run:v${VERSION}:${mode}`;
+function storageKey(mode: "put" | "call", language: string): string {
+  return `option-desk:last-run:v${VERSION}:${mode}:${language}`;
 }
 
 function isStep(value: unknown): value is TimelineStep {
@@ -36,6 +37,7 @@ function parse(raw: string): CachedRun | null {
     const data = JSON.parse(raw) as Partial<CachedRun>;
     if (data.v !== VERSION) return null;
     if (data.mode !== "put" && data.mode !== "call") return null;
+    if (typeof data.language !== "string") return null;
     if (typeof data.ticker !== "string" || typeof data.delta !== "number") return null;
     if (typeof data.cash !== "number" || typeof data.shares !== "number") return null;
     if (typeof data.costBasis !== "number" || typeof data.savedAt !== "string") return null;
@@ -44,6 +46,7 @@ function parse(raw: string): CachedRun | null {
     if (steps.length === 0) return null;
     return {
       v: VERSION,
+      language: data.language,
       mode: data.mode,
       ticker: data.ticker,
       delta: data.delta,
@@ -60,9 +63,9 @@ function parse(raw: string): CachedRun | null {
   }
 }
 
-export function loadCachedRun(mode: "put" | "call"): CachedRun | null {
+export function loadCachedRun(mode: "put" | "call", language: string): CachedRun | null {
   try {
-    const raw = window.localStorage.getItem(storageKey(mode));
+    const raw = window.localStorage.getItem(storageKey(mode, language));
     if (!raw) return null;
     return parse(raw);
   } catch {
@@ -79,19 +82,20 @@ export function saveCachedRun(run: Omit<CachedRun, "v" | "savedAt">): CachedRun 
   };
   if (payload.steps.length === 0) return null;
   try {
-    window.localStorage.setItem(storageKey(run.mode), JSON.stringify(payload));
+    window.localStorage.setItem(storageKey(run.mode, run.language), JSON.stringify(payload));
     return payload;
   } catch {
     return null;
   }
 }
 
-export function formatCachedAt(iso: string): string {
+export function formatCachedAt(iso: string, locale: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  const month = date.getMonth() + 1;
-  const day = date.getDate();
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${month}月${day}日 ${hours}:${minutes}`;
+  return date.toLocaleString(locale, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }

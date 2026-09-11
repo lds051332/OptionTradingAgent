@@ -108,24 +108,7 @@ function Ensure-EnvFile {
             throw "找不到 .env 或 .env.example"
         }
         Copy-Item $EnvExample $EnvFile
-        Write-Warn "已复制 .env.example → .env，请补 LLM key 和口令"
-    }
-    $password = Get-DotEnvValue "OPTION_DESK_WEB_PASSWORD"
-    if (-not $password) {
-        Add-Content -LiteralPath $EnvFile -Value "`nOPTION_DESK_WEB_PASSWORD=desk"
-        Write-Warn "OPTION_DESK_WEB_PASSWORD 为空，已写入本机默认口令 desk（上云请改掉）"
-    }
-    $secret = Get-DotEnvValue "OPTION_DESK_WEB_SECRET"
-    if (-not $secret -or $secret -eq "change-me-to-a-long-random-string") {
-        $generated = -join ((1..32) | ForEach-Object { "{0:x}" -f (Get-Random -Max 16) })
-        $text = Get-Content -LiteralPath $EnvFile -Raw -Encoding UTF8
-        if ($text -match "(?m)^OPTION_DESK_WEB_SECRET=.*$") {
-            $text = [regex]::Replace($text, "(?m)^OPTION_DESK_WEB_SECRET=.*$", "OPTION_DESK_WEB_SECRET=$generated")
-        } else {
-            $text = $text.TrimEnd() + "`r`nOPTION_DESK_WEB_SECRET=$generated`r`n"
-        }
-        Set-Content -LiteralPath $EnvFile -Value $text -Encoding UTF8 -NoNewline
-        Write-Warn "已生成本机 OPTION_DESK_WEB_SECRET"
+        Write-Warn "已复制 .env.example → .env，请补 LLM key"
     }
 }
 
@@ -268,12 +251,8 @@ try {
     exit 2
 }
 
-$Password = Get-DotEnvValue "OPTION_DESK_WEB_PASSWORD"
 Write-Host ""
 Write-Host "本机决策台: http://127.0.0.1:$Port" -ForegroundColor Green
-if ($Password) {
-    Write-Host "登录口令:   $Password" -ForegroundColor Green
-}
 Write-Host "Ctrl+C 停止。再执行本脚本即重启。" -ForegroundColor DarkGray
 Write-Host ""
 & $Python -m option_desk.web

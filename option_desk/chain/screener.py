@@ -9,6 +9,7 @@ import yfinance as yf
 
 from option_desk.chain.greeks import abs_put_delta, call_delta, implied_vol, years_from_dte
 from option_desk.config import Settings
+from option_desk.i18n import t
 from option_desk.schemas import (
     BucketCandidate,
     CalendarGate,
@@ -136,41 +137,13 @@ def _quality_notes(
             quotes.append(cand.spread.long)
     if not quotes:
         return []
-    zh = str(lang).lower().startswith("zh")
     notes: list[str] = []
     if any(q.quote_source is QuoteSource.LAST for q in quotes):
-        if zh:
-            notes.append(
-                "过期成交价，不是盘口：买卖价为空，权利金用最新成交，价差未知。"
-                "Yahoo 盘后常见。下单前必须核实现价与买卖盘。"
-            )
-        else:
-            notes.append(
-                "Last print, not NBBO: bid/ask missing, premium is last trade, spread unknown. "
-                "Common on Yahoo after hours. Confirm live quotes before sending an order."
-            )
+        notes.append(t(lang, "note_last_print"))
     if any(q.iv_source is IvSource.IMPLIED for q in quotes):
-        if zh:
-            notes.append(
-                "链上 IV 不可用，Delta 由成交价反推，只用于选档，不是交易所 Greek。"
-            )
-        else:
-            notes.append(
-                "Chain IV unusable; Delta is implied from the last print for screening only, "
-                "not an exchange Greek."
-            )
+        notes.append(t(lang, "note_iv_implied"))
     elif any(q.iv_source is IvSource.FLOORED for q in quotes):
-        floor_pct = f"{settings.iv_floor:.0%}"
-        if zh:
-            notes.append(
-                f"链上 IV 过低且无法从成交价反推，已套 {floor_pct} 下限。"
-                "Delta 偏差可能很大，仅供参考。"
-            )
-        else:
-            notes.append(
-                f"Chain IV too low to invert from last; floored at {floor_pct}. "
-                "Delta may be far off — screening only."
-            )
+        notes.append(t(lang, "note_iv_floored", floor=f"{settings.iv_floor:.0%}"))
     return notes
 
 
@@ -512,24 +485,20 @@ def screen_ticker(ticker: str, as_of: date, settings: Settings) -> TickerSnapsho
     notes: list[str] = []
     spot = fetch_spot(ticker)
     mode = DeskMode.CALL if str(settings.desk_mode).lower() == "call" else DeskMode.PUT
+    lang = str(settings.output_language)
     if mode is DeskMode.CALL:
         quotes = load_call_quotes(ticker, spot, as_of, settings)
-        empty_msg = f"No liquid calls in DTE {settings.min_dte}-{settings.max_dte}."
+        empty_msg = t(lang, "note_no_calls", lo=settings.min_dte, hi=settings.max_dte)
         buckets = build_call_buckets(quotes, settings.shares, settings)
         leftover = max(int(settings.shares) - _cc_contracts(settings.shares) * 100, 0)
         if leftover:
-            if str(settings.output_language).lower().startswith("zh"):
-                notes.append(f"{leftover} 股未覆盖（每张合约对应 100 股）。")
-            else:
-                notes.append(f"{leftover} shares uncovered (contracts cover lots of 100).")
+            notes.append(t(lang, "note_uncovered", leftover=leftover))
     else:
         quotes = load_put_quotes(ticker, spot, as_of, settings)
-        empty_msg = f"No liquid puts in DTE {settings.min_dte}-{settings.max_dte}."
+        empty_msg = t(lang, "note_no_puts", lo=settings.min_dte, hi=settings.max_dte)
         buckets = build_buckets(quotes, settings.cash, settings)
     if as_of != date.today():
-        notes.append(
-            "Option chain is a live yfinance snapshot; --as-of only shifts DTE and calendar windows."
-        )
+        notes.append(t(lang, "note_as_of"))
     if not quotes:
         notes.append(empty_msg)
     notes.extend(_quality_notes(buckets, settings, str(settings.output_language)))

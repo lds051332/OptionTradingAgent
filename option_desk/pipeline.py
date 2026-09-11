@@ -10,7 +10,7 @@ from option_desk.chain.screener import screen_ticker, uses_last_print
 from option_desk.config import Settings
 from option_desk.events.scout import classify_scout_hits, scout_queries
 from option_desk.events.search import search_web
-from option_desk.i18n import normalize_lang, t
+from option_desk.i18n import localize_hard_reason, normalize_lang, t
 from option_desk.schemas import DeskMode, DeskRun, TickerSnapshot
 from option_desk.stream import StreamEvent, stream_event
 
@@ -22,6 +22,9 @@ def _attach_calendar(snapshot: TickerSnapshot, settings: Settings) -> TickerSnap
         snapshot.calendar.holding_end,
         settings,
     )
+    reasons = [localize_hard_reason(reason, settings.output_language) for reason in gate.hard_reasons]
+    if reasons != list(gate.hard_reasons):
+        gate = gate.model_copy(update={"hard_reasons": reasons})
     return snapshot.model_copy(update={"calendar": gate})
 
 
@@ -63,7 +66,7 @@ def iter_desk(
 
         yield stream_event(
             "run_started",
-            message=f"开始分析 {', '.join(tickers)}",
+            message=t(lang, "pipe_run_started", tickers=", ".join(tickers)),
             tickers=tickers,
             delta=settings.standard_delta,
             cash=settings.cash,
@@ -79,7 +82,7 @@ def iter_desk(
             yield stream_event(
                 "screen_started",
                 ticker=ticker,
-                message=f"正在拉取 {ticker} {right} 链并估算 Delta…",
+                message=t(lang, "pipe_screen_started", ticker=ticker, right=right),
             )
             try:
                 snap = screen_ticker(ticker, as_of, settings)
@@ -92,17 +95,18 @@ def iter_desk(
                     message=msg,
                 )
                 continue
-            last_note = ""
-            if uses_last_print(snap.buckets):
-                last_note = (
-                    "（权利金为成交价，非盘口）"
-                    if normalize_lang(lang) == "zh"
-                    else " (last print, not NBBO)"
-                )
+            last_note = t(lang, "pipe_last_print_note") if uses_last_print(snap.buckets) else ""
             yield stream_event(
                 "screen_done",
                 ticker=ticker,
-                message=f"{ticker} 现价 {snap.spot:.2f}，筛出 {len(snap.buckets)} 档候选{last_note}",
+                message=t(
+                    lang,
+                    "pipe_screen_done",
+                    ticker=ticker,
+                    spot=f"{snap.spot:.2f}",
+                    n=len(snap.buckets),
+                    note=last_note,
+                ),
                 snapshot=_dump(snap),
             )
             if not snap.buckets:
@@ -111,29 +115,34 @@ def iter_desk(
             yield stream_event(
                 "calendar_started",
                 ticker=ticker,
-                message=f"正在核对 {ticker} 持有期日历（财报 / FOMC / 宏观）…",
+                message=t(lang, "pipe_calendar_started", ticker=ticker),
             )
             try:
                 snap = _attach_calendar(snap, settings)
             except Exception as exc:
-                warnings.append(f"{ticker}: calendar failed ({exc})")
+                warnings.append(t(lang, "pipe_calendar_failed", ticker=ticker, exc=exc))
                 snapshots.append(snap)
                 yield stream_event(
                     "calendar_done",
                     ticker=ticker,
-                    message=f"{ticker} 日历核对失败：{exc}",
+                    message=t(lang, "pipe_calendar_failed", ticker=ticker, exc=exc),
                     calendar=_dump(snap.calendar),
                 )
                 continue
             snapshots.append(snap)
             cal = snap.calendar
             if cal.hard_skip:
-                cal_msg = f"{ticker} 硬性跳过：{'; '.join(cal.hard_reasons) or '日历门控'}"
+                cal_msg = t(
+                    lang,
+                    "pipe_calendar_hard",
+                    ticker=ticker,
+                    reasons="; ".join(cal.hard_reasons) or t(lang, "pipe_calendar_gate"),
+                )
             elif cal.soft_macros:
                 tags = ", ".join(f"{m.kind} {m.event_date.isoformat()}" for m in cal.soft_macros)
-                cal_msg = f"{ticker} 软宏观：{tags}"
+                cal_msg = t(lang, "pipe_calendar_soft", ticker=ticker, tags=tags)
             else:
-                cal_msg = f"{ticker} 持有期内无硬日历冲突"
+                cal_msg = t(lang, "pipe_calendar_clear", ticker=ticker)
             yield stream_event(
                 "calendar_done",
                 ticker=ticker,
@@ -146,16 +155,16 @@ def iter_desk(
         if not tradeable:
             yield stream_event(
                 "desk_started",
-                message="没有候选档位，跳过日历与侦察，直接 SKIP",
+                message=t(lang, "pipe_no_candidates"),
             )
             desk = no_candidate_desk(snapshots, lang, mode=mode.value)
             yield stream_event(
                 "desk_done",
-                message="终审完成：无合约可开，全部 SKIP",
+                message=t(lang, "pipe_desk_skip_all"),
                 desk=_dump(desk),
             )
         else:
-            yield stream_event("scout_search_started", message="正在搜索日历外突发风险…")
+            yield stream_event("scout_search_started", message=t(lang, "pipe_scout_search"))
             hits = []
             scout_names = [snap.ticker for snap in tradeable]
             for query in scout_queries(scout_names, as_of):
@@ -163,26 +172,26 @@ def iter_desk(
                 hits.extend(batch)
                 yield stream_event(
                     "scout_hits",
-                    message=f"已收集 {len(hits)} 条搜索结果",
+                    message=t(lang, "pipe_scout_hits", n=len(hits)),
                     query=query,
                     hits=[h.as_dict() for h in hits],
                 )
 
-            yield stream_event("scout_llm_started", message="正在用 LLM 分类事件…")
+            yield stream_event("scout_llm_started", message=t(lang, "pipe_scout_llm"))
             events, scout_warnings = classify_scout_hits(scout_names, as_of, settings, llm, hits)
             warnings.extend(scout_warnings)
             yield stream_event(
                 "scout_done",
-                message=f"侦察完成，{len(events)} 条事件" if events else "侦察完成，无需要跟进的事件",
+                message=t(lang, "pipe_scout_done", n=len(events)) if events else t(lang, "pipe_scout_done_empty"),
                 events=[_dump(e) for e in events],
                 warnings=scout_warnings,
             )
 
-            yield stream_event("desk_started", message="终审中，正在候选档位里选约…")
+            yield stream_event("desk_started", message=t(lang, "pipe_desk_started"))
             desk = run_desk_llm(snapshots, events, settings.cash, settings, llm)
             yield stream_event(
                 "desk_done",
-                message="终审完成",
+                message=t(lang, "pipe_desk_done"),
                 desk=_dump(desk),
             )
 
@@ -203,11 +212,12 @@ def iter_desk(
         )
         yield stream_event(
             "run_finished",
-            message="本轮分析结束",
+            message=t(lang, "pipe_run_finished"),
             run=_dump(run),
         )
     except Exception as exc:
-        yield stream_event("run_error", message=f"分析中断：{exc}")
+        err_lang = normalize_lang(getattr(settings, "output_language", None) if settings else None)
+        yield stream_event("run_error", message=t(err_lang, "pipe_run_error", exc=exc))
 
 
 def run_desk(

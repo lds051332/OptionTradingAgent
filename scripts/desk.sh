@@ -94,11 +94,7 @@ ensure_env() {
   if [[ ! -f "$ENV_FILE" ]]; then
     [[ -f "$ENV_EXAMPLE" ]] || { echo "找不到 .env 或 .env.example" >&2; exit 1; }
     cp "$ENV_EXAMPLE" "$ENV_FILE"
-    warn "已复制 .env.example → .env，请补 LLM key 和口令"
-  fi
-  if [[ -z "$(dotenv_get OPTION_DESK_WEB_PASSWORD || true)" ]]; then
-    printf '\nOPTION_DESK_WEB_PASSWORD=desk\n' >> "$ENV_FILE"
-    warn "OPTION_DESK_WEB_PASSWORD 为空，已写入本机默认口令 desk（上云请改掉）"
+    warn "已复制 .env.example → .env，请补 LLM key"
   fi
 }
 
@@ -177,9 +173,7 @@ fi
 
 ensure_frontend
 
-PASSWORD="$(dotenv_get OPTION_DESK_WEB_PASSWORD || true)"
 printf '\n本机决策台: http://127.0.0.1:%s\n' "$PORT"
-[[ -n "$PASSWORD" ]] && printf '登录口令:   %s\n' "$PASSWORD"
 echo "Ctrl+C 停止。再执行本脚本即重启。"
 echo
 exec "$VENV_PY" -m option_desk.web

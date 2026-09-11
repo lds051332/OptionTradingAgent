@@ -158,6 +158,19 @@ def test_yahoo_metadata_error_is_retryable_message(monkeypatch):
     assert "currentTradingPeriod" not in err.message or "元数据" in err.message
 
 
+def test_pipeline_progress_follows_language(monkeypatch):
+    snap = _snap()
+    _patch_pipeline(monkeypatch, snap, [])
+    settings = Settings(tickers="NVDA", cash=55000, output_language="en")
+    start = next(
+        event
+        for event in iter_desk(["NVDA"], as_of=date(2026, 9, 2), settings=settings)
+        if event.type == "run_started"
+    )
+    assert "Analyzing" in start.message
+    assert "开始分析" not in start.message
+
+
 def test_empty_buckets_skip_calendar_scout_and_skip(monkeypatch):
     snap = _snap()
     empty = snap.model_copy(update={"buckets": {}, "notes": ["No liquid calls in DTE 3-9."]})

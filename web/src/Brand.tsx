@@ -1,4 +1,5 @@
 import { Link } from "./router";
+import { useI18n } from "./locale";
 import { media } from "./staticMedia";
 
 type SealSize = "sm" | "md" | "lg";
@@ -35,12 +36,13 @@ export function BrandSeal({
 }
 
 export function BrandLockup({ title, onHome }: { title: string; onHome?: () => void }) {
+  const { t } = useI18n();
   return (
     <Link to="/" onClick={onHome} className="brand-lockup flex min-w-0 items-center gap-3">
       <BrandSeal variant="icon" size="md" />
       <div className="min-w-0">
         <p className="font-[family-name:var(--font-display)] text-[13px] tracking-[0.22em] text-[var(--brass)]">
-          摩根大山
+          {t("common.brand")}
         </p>
         <h1 className="font-[family-name:var(--font-display)] text-[1.7rem] leading-none text-[var(--chalk)]">
           {title}

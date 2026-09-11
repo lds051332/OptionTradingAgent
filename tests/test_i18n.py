@@ -1,7 +1,14 @@
 from datetime import date, datetime, timezone
 
 from option_desk.agents.desk import heuristic_desk
-from option_desk.i18n import language_instruction, localize_hard_reason, normalize_lang, t
+from option_desk.i18n import (
+    UI,
+    lang_from_headers,
+    language_instruction,
+    localize_hard_reason,
+    normalize_lang,
+    t,
+)
 from option_desk.report import render_markdown
 from option_desk.schemas import DeskAction, DeskOutput, DeskRun, TickerDecision
 from tests.test_desk import _snap
@@ -19,7 +26,20 @@ def test_ui_pack_and_instruction():
     assert t("zh", "decision") == "终审建议"
     assert t("en", "decision") == "Desk decision"
     assert "Simplified Chinese" in language_instruction("zh")
-    assert language_instruction("en") == ""
+    assert "in English" in language_instruction("en")
+    assert "Do not write Chinese" in language_instruction("en")
+    assert t("zh", "pipe_run_started", tickers="NVDA") == "开始分析 NVDA"
+    assert t("en", "pipe_run_started", tickers="NVDA") == "Analyzing NVDA"
+
+
+def test_ui_packs_have_the_same_keys():
+    assert set(UI["en"]) == set(UI["zh"])
+
+
+def test_lang_from_headers():
+    assert lang_from_headers({"x-option-desk-lang": "zh-CN"}) == "zh"
+    assert lang_from_headers({"accept-language": "en-US,en;q=0.9"}) == "en"
+    assert lang_from_headers({}, fallback="zh") == "zh"
 
 
 def test_localize_hard_reason_zh():
