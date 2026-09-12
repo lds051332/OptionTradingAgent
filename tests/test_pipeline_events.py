@@ -75,6 +75,7 @@ def _patch_pipeline(monkeypatch, snap: TickerSnapshot, events: list[ScoutedEvent
     monkeypatch.setattr("option_desk.pipeline.make_llm", lambda *a, **k: None)
     desk = heuristic_desk([snap], events, 55000, "zh")
     monkeypatch.setattr("option_desk.pipeline.run_desk_llm", lambda *a, **k: desk)
+    monkeypatch.setattr("option_desk.pipeline.fetch_market_regime", lambda *_a, **_k: None)
 
 
 def test_iter_desk_event_order(monkeypatch):
@@ -109,6 +110,8 @@ def test_iter_desk_event_order(monkeypatch):
         "desk_done",
     ):
         assert name in types
+    assert "regime_started" in types
+    assert "regime_done" in types
     assert types.count("scout_hits") == 2
 
 

@@ -40,6 +40,21 @@ class IvSource(str, Enum):
     FLOORED = "floored"
 
 
+class IvRegime(str, Enum):
+    UNKNOWN = "unknown"
+    LOW = "low"
+    NORMAL = "normal"
+    HIGH = "high"
+    RICH = "rich"
+
+
+class MarketLabel(str, Enum):
+    RISK_ON = "risk_on"
+    NEUTRAL = "neutral"
+    CAUTION = "caution"
+    RISK_OFF = "risk_off"
+
+
 class EventAction(str, Enum):
     IGNORE = "ignore"
     REDUCE = "reduce"
@@ -80,6 +95,54 @@ class SpreadQuote(BaseModel):
     contracts: int
 
 
+class ContractScore(BaseModel):
+    """0-100 ranking aid for a bucket candidate. Not an order."""
+
+    total: int
+    delta: int
+    iv: int
+    premium: int
+    spread: int
+    expected_move: int
+    liquidity: int
+    strike_distance_pct: float
+    premium_yield: float
+    expected_move_pct: float
+    inside_expected_move: bool
+
+
+class IvContext(BaseModel):
+    """IV vs realized vol for this ticker. Not a historical percentile."""
+
+    atm_iv: float | None = None
+    hv_20: float | None = None
+    hv_60: float | None = None
+    hv_120: float | None = None
+    iv_hv_ratio: float | None = None
+    regime: IvRegime = IvRegime.UNKNOWN
+    expected_move_pct: float | None = None
+    expected_move: float | None = None
+    expected_move_dte: int | None = None
+
+
+class MarketRegime(BaseModel):
+    """VIX + SPY/QQQ snapshot for this run. Reduce signal, never a hard skip."""
+
+    label: MarketLabel = MarketLabel.NEUTRAL
+    vix: float | None = None
+    vix3m: float | None = None
+    vix_term: float | None = None
+    spy: float | None = None
+    spy_sma20: float | None = None
+    spy_sma50: float | None = None
+    spy_hv20: float | None = None
+    qqq: float | None = None
+    qqq_sma20: float | None = None
+    qqq_sma50: float | None = None
+    qqq_hv20: float | None = None
+    why: str = ""
+
+
 class BucketCandidate(BaseModel):
     bucket: DeltaBucket
     target_delta: float
@@ -88,6 +151,7 @@ class BucketCandidate(BaseModel):
     csp_contracts: int
     assignment_cash: float
     premium_per_contract: float
+    score: ContractScore | None = None
 
 
 class SoftMacroEvent(BaseModel):
@@ -118,6 +182,7 @@ class TickerSnapshot(BaseModel):
     mode: DeskMode = DeskMode.PUT
     shares: float | None = None
     cost_basis: float | None = None
+    iv_context: IvContext | None = None
 
 
 class ScoutedEvent(BaseModel):
@@ -204,3 +269,4 @@ class DeskRun(BaseModel):
     mode: DeskMode = DeskMode.PUT
     shares: float | None = None
     cost_basis: float | None = None
+    market: MarketRegime | None = None

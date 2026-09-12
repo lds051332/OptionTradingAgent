@@ -17,6 +17,8 @@ The CLI still runs puts only. The call book is Web-only.
 
 - Pulls a **live option chain** from yfinance and **estimates** put / call Delta with chain IV + Black-Scholes (not exchange Greeks)
 - Screens two buckets: `conservative` (~0.10Δ) and `standard` (~0.20Δ). `0.2Δ` is the default anchor, not a hard wall. On calls, conservative is further OTM (higher strike)
+- Compares ATM IV with 20/60/120-day realized vol (not a stored IV percentile), 1-sigma expected move vs strike distance, and a 0–100 contract score
+- VIX + SPY/QQQ regime is a **reduce** signal (prefer conservative). It never hard-SKIPs on its own
 - Earnings or FOMC in the holding window → **hard SKIP** (you may not keep selling at a smaller Delta)
 - CPI / NFP / PCE are soft tags for the desk
 - The LLM searches fixed queries for off-calendar gaps (export controls, capex, lawsuits, …)
@@ -185,12 +187,14 @@ location /api/runs {
 
 ## Pipeline
 
-1. Screen the chain, estimate Delta, pick two buckets (put or call chain, per book)
-2. Earnings or FOMC in the holding window → hard SKIP
-3. CPI / NFP / PCE as soft tags
-4. LLM searches fixed queries for off-calendar gaps
-5. Desk emits action + structure + bucket + a **`contract_id` from that bucket**
-6. OPEN includes expiration P/L: puts as a short option; calls as stock vs cost basis plus the short call
+1. Read VIX / SPY / QQQ market regime (reduce, not a hard skip)
+2. Screen the chain, estimate Delta, pick two buckets (put or call chain, per book)
+3. Attach IV vs realized vol, expected move, and a contract score
+4. Earnings or FOMC in the holding window → hard SKIP
+5. CPI / NFP / PCE as soft tags
+6. LLM searches fixed queries for off-calendar gaps
+7. Desk emits action + structure + bucket + a **`contract_id` from that bucket**
+8. OPEN includes expiration P/L: puts as a short option; calls as stock vs cost basis plus the short call
 
 The CLI uses `run_desk()` (puts). The Web uses `iter_desk()` on the same path, with `desk_mode=put|call`, and streams SSE. Do not reimplement the screener.
 
@@ -213,7 +217,7 @@ pytest
 
 ```
 option_desk/          Python package: screener, calendar, scout, desk, CLI, FastAPI
-  chain/              Option chain + Black-Scholes Delta
+  chain/              Option chain, Delta, IV vs HV, expected move, market regime
   calendar/           Earnings / FOMC / CPI / NFP / PCE gates
   events/             Search + LLM event classification
   agents/             Structured desk
@@ -228,6 +232,7 @@ docker-compose.yml
 ## Explicitly out of scope
 
 - Broker orders, position sync, intraday monitoring
+- Historical IV percentile store or a market-wide scanner
 - Multi-user accounts / OAuth, persisted chat history
 - Aggressive (>0.25Δ) buckets, call spreads, index / crypto options
 - CLI covered calls (the call book is Web-only)

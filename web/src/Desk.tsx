@@ -12,12 +12,14 @@ import type {
   CalendarGate,
   Defaults,
   DeskOutput,
+  MarketRegime,
   ScoutedEvent,
   SearchHit,
   StreamEvent,
   TimelineStep,
   TickerSnapshot,
 } from "./types";
+import { QualityPanel, RegimeBlock } from "./QualityPanel";
 
 type Props = {
   defaults: Defaults;
@@ -44,6 +46,21 @@ function upsert(steps: TimelineStep[], next: TimelineStep): TimelineStep[] {
 function applyEvent(steps: TimelineStep[], event: StreamEvent): TimelineStep[] {
   const ticker = event.ticker ?? undefined;
   switch (event.type) {
+    case "regime_started":
+      return upsert(steps, {
+        id: "regime",
+        type: "regime",
+        status: "running",
+        message: event.message,
+      });
+    case "regime_done":
+      return upsert(steps, {
+        id: "regime",
+        type: "regime",
+        status: "done",
+        message: event.message,
+        market: event.data.market as MarketRegime | undefined,
+      });
     case "screen_started":
       return upsert(steps, {
         id: `screen:${ticker}`,
@@ -450,6 +467,7 @@ function StepCard({ step, mode }: { step: TimelineStep; mode: "put" | "call" }) 
         ) : null}
       </header>
       {live ? <WorkingReel label={step.message} /> : <p className="text-sm text-[var(--mute)]">{step.message}</p>}
+      {step.type === "regime" && !live ? <RegimeBlock market={step.market} /> : null}
       {step.snapshot ? <Buckets snapshot={step.snapshot} mode={mode} /> : null}
       {!live && step.calendar ? <CalendarBlock calendar={step.calendar} /> : null}
       {step.hits && step.hits.length > 0 ? <Hits hits={step.hits} /> : null}
@@ -468,6 +486,7 @@ function StepCard({ step, mode }: { step: TimelineStep; mode: "put" | "call" }) 
 function stepTitle(step: TimelineStep, t: (key: MsgKey, vars?: Record<string, string | number>) => string): string {
   if (step.type === "screen") return t("desk.stepScreen", { ticker: step.ticker ?? "" }).trim();
   if (step.type === "calendar") return t("desk.stepCalendar", { ticker: step.ticker ?? "" }).trim();
+  if (step.type === "regime") return t("desk.stepRegime");
   if (step.type === "scout") return t("desk.stepScout");
   if (step.type === "desk") return t("desk.stepDesk");
   if (step.type === "error") return t("desk.stepError");
@@ -502,16 +521,18 @@ function Buckets({ snapshot, mode }: { snapshot: TickerSnapshot; mode: "put" | "
           ))}
         </ul>
       ) : null}
+      <QualityPanel snapshot={snapshot} mode={mode} />
       {buckets.length === 0 ? (
         <p className="mt-2 text-sm text-[var(--mute)]">{call ? t("desk.noCalls") : t("desk.noPuts")}</p>
       ) : (
-        <table className="mt-2 w-full min-w-[28rem] text-left text-xs">
+        <table className="bucket-table mt-2 w-full min-w-[26rem] text-left text-xs">
           <thead className="text-[var(--mute)]">
             <tr>
               <th className="py-1 font-medium">{t("desk.colBucket")}</th>
               <th className="py-1 font-medium">{t("desk.colContract")}</th>
               <th className="py-1 font-medium">Δ</th>
               <th className="py-1 font-medium">{t("desk.colPremium")}</th>
+              <th className="py-1 font-medium">{t("desk.colScore")}</th>
               <th className="py-1 font-medium">{call ? "CC" : "CSP"}</th>
             </tr>
           </thead>
@@ -541,7 +562,7 @@ function BucketRow({ bucket, call }: { bucket: BucketCandidate; call: boolean })
   return (
     <tr className="border-t border-[var(--hairline)]">
       <td className="py-2">{bucket.bucket}</td>
-      <td className="py-2">{bucket.csp.contract_id}</td>
+      <td className="contract-id py-2">{bucket.csp.contract_id}</td>
       <td className="py-2">
         {bucket.csp.delta.toFixed(3)}
         {ivMark ? <span className="quote-mark">{ivMark}</span> : null}
@@ -549,6 +570,12 @@ function BucketRow({ bucket, call }: { bucket: BucketCandidate; call: boolean })
       <td className="py-2">
         ${money(bucket.premium_per_contract)}
         {last ? <span className="quote-mark">{t("desk.lastMark")}</span> : null}
+      </td>
+      <td className="py-2">
+        {bucket.score ? t("desk.scoreHint", { total: bucket.score.total }) : "—"}
+        {bucket.score?.inside_expected_move ? (
+          <div className="text-[10px] text-[var(--skip)]">{t("desk.emInside")}</div>
+        ) : null}
       </td>
       <td className="py-2">
         {call ? (

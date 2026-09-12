@@ -8,6 +8,8 @@ import pandas as pd
 import yfinance as yf
 
 from option_desk.chain.greeks import abs_put_delta, call_delta, implied_vol, years_from_dte
+from option_desk.chain.market import fetch_closes
+from option_desk.chain.quality import build_iv_context, score_contract
 from option_desk.config import Settings
 from option_desk.i18n import t
 from option_desk.schemas import (
@@ -480,6 +482,32 @@ def build_call_buckets(
     return buckets
 
 
+def _score_buckets(
+    buckets: dict[DeltaBucket, BucketCandidate],
+    spot: float,
+    settings: Settings,
+    mode: DeskMode,
+    iv_hv_ratio: float | None,
+) -> dict[DeltaBucket, BucketCandidate]:
+    scored: dict[DeltaBucket, BucketCandidate] = {}
+    for bucket, cand in buckets.items():
+        band = (
+            settings.conservative_delta_band
+            if bucket is DeltaBucket.CONSERVATIVE
+            else settings.standard_delta_band
+        )
+        score = score_contract(
+            cand.csp,
+            spot=spot,
+            target_delta=cand.target_delta,
+            band=band,
+            mode=mode,
+            iv_hv_ratio=iv_hv_ratio,
+        )
+        scored[bucket] = cand.model_copy(update={"score": score})
+    return scored
+
+
 def screen_ticker(ticker: str, as_of: date, settings: Settings) -> TickerSnapshot:
     fetched_at = datetime.now(timezone.utc)
     notes: list[str] = []
@@ -507,6 +535,11 @@ def screen_ticker(ticker: str, as_of: date, settings: Settings) -> TickerSnapsho
     else:
         holding_end = as_of + timedelta(days=settings.max_dte)
 
+    iv_context = build_iv_context(quotes, spot, fetch_closes(ticker)) if quotes else None
+    if buckets:
+        ratio = iv_context.iv_hv_ratio if iv_context else None
+        buckets = _score_buckets(buckets, spot, settings, mode, ratio)
+
     return TickerSnapshot(
         ticker=ticker,
         spot=spot,
@@ -523,4 +556,5 @@ def screen_ticker(ticker: str, as_of: date, settings: Settings) -> TickerSnapsho
         mode=mode,
         shares=settings.shares if mode is DeskMode.CALL else None,
         cost_basis=settings.cost_basis if mode is DeskMode.CALL else None,
+        iv_context=iv_context,
     )

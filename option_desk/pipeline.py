@@ -6,6 +6,7 @@ from datetime import date, datetime, timezone
 from option_desk.agents.desk import no_candidate_desk, run_desk_llm
 from option_desk.agents.llm import make_llm
 from option_desk.calendar.gates import evaluate_calendar
+from option_desk.chain.market import fetch_market_regime
 from option_desk.chain.screener import screen_ticker, uses_last_print
 from option_desk.config import Settings
 from option_desk.events.scout import classify_scout_hits, scout_queries
@@ -77,6 +78,38 @@ def iter_desk(
             shares=settings.shares if mode is DeskMode.CALL else None,
             cost_basis=settings.cost_basis if mode is DeskMode.CALL else None,
         )
+
+        market = None
+        yield stream_event("regime_started", message=t(lang, "pipe_regime_started"))
+        try:
+            market = fetch_market_regime(lang)
+        except Exception as exc:
+            warnings.append(t(lang, "pipe_regime_failed", exc=exc))
+            yield stream_event(
+                "regime_done",
+                message=t(lang, "pipe_regime_failed", exc=exc),
+            )
+        else:
+            if market is None:
+                warnings.append(t(lang, "pipe_regime_none"))
+                yield stream_event("regime_done", message=t(lang, "pipe_regime_none"))
+            else:
+                label_key = {
+                    "risk_on": "regime_label_on",
+                    "neutral": "regime_label_neutral",
+                    "caution": "regime_label_caution",
+                    "risk_off": "regime_label_off",
+                }.get(market.label.value, "regime_label_neutral")
+                yield stream_event(
+                    "regime_done",
+                    message=t(
+                        lang,
+                        "pipe_regime_done",
+                        label=t(lang, label_key),
+                        why=market.why,
+                    ),
+                    market=_dump(market),
+                )
 
         for ticker in tickers:
             yield stream_event(
@@ -188,7 +221,7 @@ def iter_desk(
             )
 
             yield stream_event("desk_started", message=t(lang, "pipe_desk_started"))
-            desk = run_desk_llm(snapshots, events, settings.cash, settings, llm)
+            desk = run_desk_llm(snapshots, events, settings.cash, settings, llm, market=market)
             yield stream_event(
                 "desk_done",
                 message=t(lang, "pipe_desk_done"),
@@ -209,6 +242,7 @@ def iter_desk(
             mode=mode,
             shares=settings.shares if mode is DeskMode.CALL else None,
             cost_basis=settings.cost_basis if mode is DeskMode.CALL else None,
+            market=market,
         )
         yield stream_event(
             "run_finished",

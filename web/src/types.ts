@@ -45,6 +45,48 @@ export type SpreadQuote = {
   contracts: number;
 };
 
+export type ContractScore = {
+  total: number;
+  delta: number;
+  iv: number;
+  premium: number;
+  spread: number;
+  expected_move: number;
+  liquidity: number;
+  strike_distance_pct: number;
+  premium_yield: number;
+  expected_move_pct: number;
+  inside_expected_move: boolean;
+};
+
+export type IvContext = {
+  atm_iv: number | null;
+  hv_20: number | null;
+  hv_60: number | null;
+  hv_120: number | null;
+  iv_hv_ratio: number | null;
+  regime: "unknown" | "low" | "normal" | "high" | "rich";
+  expected_move_pct: number | null;
+  expected_move: number | null;
+  expected_move_dte: number | null;
+};
+
+export type MarketRegime = {
+  label: "risk_on" | "neutral" | "caution" | "risk_off";
+  vix: number | null;
+  vix3m: number | null;
+  vix_term: number | null;
+  spy: number | null;
+  spy_sma20: number | null;
+  spy_sma50: number | null;
+  spy_hv20: number | null;
+  qqq: number | null;
+  qqq_sma20: number | null;
+  qqq_sma50: number | null;
+  qqq_hv20: number | null;
+  why: string;
+};
+
 export type BucketCandidate = {
   bucket: string;
   target_delta: number;
@@ -53,6 +95,7 @@ export type BucketCandidate = {
   csp_contracts: number;
   assignment_cash: number;
   premium_per_contract: number;
+  score?: ContractScore | null;
 };
 
 export type SoftMacro = {
@@ -83,6 +126,7 @@ export type TickerSnapshot = {
   mode?: DeskMode;
   shares?: number | null;
   cost_basis?: number | null;
+  iv_context?: IvContext | null;
 };
 
 export type ScoutedEvent = {
@@ -157,6 +201,7 @@ export type DeskRun = {
   warnings: string[];
   llm_label: string;
   language: string;
+  market?: MarketRegime | null;
 };
 
 export type StepStatus = "running" | "done" | "error";
@@ -173,4 +218,5 @@ export type TimelineStep = {
   events?: ScoutedEvent[];
   desk?: DeskOutput;
   warnings?: string[];
+  market?: MarketRegime;
 };

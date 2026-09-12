@@ -13,6 +13,9 @@ from option_desk.schemas import (
     DeskLLMResult,
     DeskOutput,
     EventAction,
+    IvRegime,
+    MarketLabel,
+    MarketRegime,
     ScoutedEvent,
     Structure,
     TickerDecision,
@@ -37,6 +40,10 @@ Hard rules:
 - If even the conservative strike is not a stock you would own, SKIP.
 - Respect cash: sum of CSP assignment_cash across OPEN CSP names cannot exceed cash. Prefer SKIP on the second name rather than over-assign.
 - Compare premium_per_contract between buckets when recommending conservative; mention the tradeoff.
+- iv_regime is this ticker's option IV versus its own 20-day realized vol, NOT a historical IV percentile. LOW = options cheap vs recent stock vol; RICH = expensive. Prefer conservative or SKIP when LOW; do not treat HIGH/RICH as a reason to ignore calendar or events.
+- expected_move is 1-sigma: spot * IV * sqrt(DTE/365). If inside_expected_move is true, the short strike still sits inside that band — say so. Prefer conservative when standard is inside EM and conservative is outside.
+- contract score is a 0-100 ranking aid among the provided buckets. Never invent a strike to chase a higher score.
+- market.regime is VIX + SPY/QQQ trend. CAUTION/RISK_OFF: prefer conservative. Never hard-SKIP solely on market regime.
 """
 
 CALL_SYSTEM = """You are the portfolio manager of a narrow US equity covered-call desk.
@@ -59,6 +66,10 @@ Hard rules:
 - If even the conservative (higher) strike plus credit is below cost basis, you may still OPEN to collect premium and lower basis, but assignment_ok must be false and you must say so.
 - Contracts cannot exceed shares/100. The screener already sized quantity.
 - Compare premium_per_contract between buckets when recommending conservative; mention the tradeoff.
+- iv_regime is this ticker's option IV versus its own 20-day realized vol, NOT a historical IV percentile. LOW = options cheap vs recent stock vol; RICH = expensive. Prefer conservative or SKIP when LOW.
+- expected_move is 1-sigma: spot * IV * sqrt(DTE/365). If inside_expected_move is true, the short strike still sits inside that band — say so. Prefer conservative when standard is inside EM and conservative is outside.
+- contract score is a 0-100 ranking aid among the provided buckets. Never invent a strike to chase a higher score.
+- market.regime is VIX + SPY/QQQ trend. CAUTION/RISK_OFF: prefer conservative. Never hard-SKIP solely on market regime.
 """
 
 
@@ -79,11 +90,18 @@ def _bucket_brief(snapshot: TickerSnapshot) -> str:
             if cand.csp.quote_source.value != "nbbo" or cand.csp.iv_source.value != "chain"
             else ""
         )
+        score_bit = ""
+        if cand.score:
+            where = "inside_EM" if cand.score.inside_expected_move else "outside_EM"
+            score_bit = (
+                f" score={cand.score.total} dist={cand.score.strike_distance_pct:.1%} "
+                f"yield={cand.score.premium_yield:.2%} em={cand.score.expected_move_pct:.1%} {where}"
+            )
         lines.append(
             f"  {bucket.value}: id={cand.csp.contract_id} strike={cand.csp.strike:g} "
             f"delta={cand.csp.delta:.3f} dte={cand.csp.dte} mid={cand.csp.mid:.2f} "
             f"premium=${cand.premium_per_contract:.0f}/ct {qty_label}={cand.csp_contracts} "
-            f"{assign_label}=${cand.assignment_cash:.0f}{spread_bit}{quote_bit}"
+            f"{assign_label}=${cand.assignment_cash:.0f}{spread_bit}{quote_bit}{score_bit}"
         )
     if not lines:
         lines.append("  (no liquid candidates)")
@@ -109,6 +127,99 @@ def _premium_tradeoff(snapshot: TickerSnapshot, lang: str = "en") -> str:
     )
 
 
+def _pct(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:.0%}"
+
+
+def _iv_brief(snapshot: TickerSnapshot) -> str:
+    ctx = snapshot.iv_context
+    if ctx is None:
+        return "iv=n/a"
+    return (
+        f"atm_iv={_pct(ctx.atm_iv)} hv20={_pct(ctx.hv_20)} hv60={_pct(ctx.hv_60)} "
+        f"hv120={_pct(ctx.hv_120)} iv/hv20={ctx.iv_hv_ratio:.2f} " 
+        f"regime={ctx.regime.value}"
+        if ctx.iv_hv_ratio is not None
+        else (
+            f"atm_iv={_pct(ctx.atm_iv)} hv20={_pct(ctx.hv_20)} hv60={_pct(ctx.hv_60)} "
+            f"hv120={_pct(ctx.hv_120)} regime={ctx.regime.value}"
+        )
+    )
+
+
+def _em_brief(snapshot: TickerSnapshot) -> str:
+    ctx = snapshot.iv_context
+    if ctx is None or ctx.expected_move_pct is None:
+        return "expected_move=n/a"
+    dollars = f"${ctx.expected_move:.2f}" if ctx.expected_move is not None else "n/a"
+    dte = ctx.expected_move_dte if ctx.expected_move_dte is not None else "?"
+    return f"expected_move=±{ctx.expected_move_pct:.1%} ({dollars}) over {dte} DTE"
+
+
+def _market_brief(market: MarketRegime | None) -> str:
+    if market is None:
+        return "MARKET REGIME: unavailable"
+    vix = f"{market.vix:.1f}" if market.vix is not None else "n/a"
+    vix3m = f"{market.vix3m:.1f}" if market.vix3m is not None else "n/a"
+    term = f"{market.vix_term:.2f}" if market.vix_term is not None else "n/a"
+    spy_bit = ""
+    if market.spy is not None and market.spy_sma20 is not None and market.spy_sma50 is not None:
+        spy_bit = f" SPY={market.spy:.2f} sma20={market.spy_sma20:.2f} sma50={market.spy_sma50:.2f}"
+    why_bit = f"\n  {market.why}" if market.why else ""
+    return (
+        f"MARKET REGIME: {market.label.value}\n"
+        f"  VIX={vix} VIX3M={vix3m} term={term}{spy_bit}{why_bit}"
+    )
+
+
+def _quality_reduce(snapshot: TickerSnapshot, market: MarketRegime | None) -> bool:
+    if market is not None and market.label in (MarketLabel.CAUTION, MarketLabel.RISK_OFF):
+        return True
+    ctx = snapshot.iv_context
+    if ctx is not None and ctx.regime is IvRegime.LOW:
+        return True
+    std = snapshot.buckets.get(DeltaBucket.STANDARD)
+    cons = snapshot.buckets.get(DeltaBucket.CONSERVATIVE)
+    if std and cons and std.score and cons.score:
+        if std.score.inside_expected_move and not cons.score.inside_expected_move:
+            return True
+    return False
+
+
+def _quality_why(snapshot: TickerSnapshot, market: MarketRegime | None, lang: str) -> str:
+    bits: list[str] = []
+    ctx = snapshot.iv_context
+    if ctx is not None and ctx.regime is not IvRegime.UNKNOWN:
+        bits.append(
+            _L(
+                lang,
+                f"IV regime {ctx.regime.value} (IV {_pct(ctx.atm_iv)} vs HV20 {_pct(ctx.hv_20)}).",
+                f"IV 体制 {ctx.regime.value}（IV {_pct(ctx.atm_iv)} vs HV20 {_pct(ctx.hv_20)}）。",
+            )
+        )
+    if market is not None:
+        bits.append(
+            _L(
+                lang,
+                f"Market {market.label.value}.",
+                f"市场体制 {market.label.value}。",
+            )
+        )
+    return " ".join(bits)
+
+
+def _inside_em_why(bucket, lang: str) -> str:
+    if not bucket.score or not bucket.score.inside_expected_move:
+        return ""
+    return _L(
+        lang,
+        " Short strike sits inside the 1-sigma expected move.",
+        " 短腿行权价仍在 1σ 预期波动内。",
+    )
+
+
 def _hard_why(reasons: list[str], lang: str) -> str:
     if not reasons:
         return _L(lang, "Hard calendar gate.", "硬日历门控。")
@@ -123,15 +234,23 @@ def snapshot_prompt(
     mode: str = "put",
     shares: float = 100,
     cost_basis: float = 0,
+    market: MarketRegime | None = None,
 ) -> str:
     if str(mode).lower() == "call":
         blocks = [
             f"Shares held: {shares:.0f} (max {int(shares) // 100} covered-call contracts)",
             f"Cost basis: ${cost_basis:,.2f} per share",
             "",
+            _market_brief(market),
+            "",
         ]
     else:
-        blocks = [f"Cash available: ${cash:,.0f}", ""]
+        blocks = [
+            f"Cash available: ${cash:,.0f}",
+            "",
+            _market_brief(market),
+            "",
+        ]
     for snap in snapshots:
         cal = snap.calendar
         soft = ", ".join(f"{m.kind} {m.event_date.isoformat()}" for m in cal.soft_macros) or "none"
@@ -145,6 +264,8 @@ def snapshot_prompt(
             f"{snap.ticker} spot={snap.spot:.2f}\n"
             f"  hard_skip={cal.hard_skip} reasons={hard}\n"
             f"  soft_macro={soft}\n"
+            f"  {_iv_brief(snap)}\n"
+            f"  {_em_brief(snap)}\n"
             f"  premium_tradeoff={_premium_tradeoff(snap)}\n"
             f"  notes={'; '.join(snap.notes) if snap.notes else 'none'}\n"
             f"  delta buckets:\n{_bucket_brief(snap)}\n"
@@ -207,6 +328,7 @@ def heuristic_call_desk(
     snapshots: list[TickerSnapshot],
     events: list[ScoutedEvent],
     lang: str = "en",
+    market: MarketRegime | None = None,
 ) -> DeskOutput:
     decisions: list[TickerDecision] = []
     for snap in snapshots:
@@ -234,7 +356,7 @@ def heuristic_call_desk(
                 )
             )
             continue
-        want_cons = bool(reduce_event or snap.calendar.soft_macros)
+        want_cons = bool(reduce_event or snap.calendar.soft_macros or _quality_reduce(snap, market))
         std = snap.buckets.get(DeltaBucket.STANDARD)
         cons = snap.buckets.get(DeltaBucket.CONSERVATIVE)
         basis = float(snap.cost_basis or 0.0)
@@ -276,9 +398,13 @@ def heuristic_call_desk(
         if want_cons:
             why = _L(
                 lang,
-                "Soft macro, reduce event, or strike below cost basis → conservative (further OTM).",
-                "有软宏观、降风险事件，或标准档行权价低于成本，改用保守档（更虚值）。",
+                "Soft macro, reduce event, quality/regime, or strike below cost basis → conservative (further OTM).",
+                "有软宏观、降风险事件、质量/体制信号，或标准档行权价低于成本，改用保守档（更虚值）。",
             )
+        extra = _quality_why(snap, market, lang)
+        if extra:
+            why = f"{why} {extra}"
+        why = f"{why}{_inside_em_why(bucket, lang)}"
         if not assignment_ok:
             why = _L(
                 lang,
@@ -312,9 +438,10 @@ def heuristic_desk(
     lang: str = "en",
     *,
     mode: str = "put",
+    market: MarketRegime | None = None,
 ) -> DeskOutput:
     if str(mode).lower() == "call":
-        return heuristic_call_desk(snapshots, events, lang)
+        return heuristic_call_desk(snapshots, events, lang, market=market)
     decisions: list[TickerDecision] = []
     remaining = cash
     for snap in snapshots:
@@ -345,7 +472,7 @@ def heuristic_desk(
         want_spread = bool(
             reduce_event and reduce_event.action == EventAction.SPREAD_ONLY
         )
-        want_cons = bool(reduce_event or snap.calendar.soft_macros)
+        want_cons = bool(reduce_event or snap.calendar.soft_macros or _quality_reduce(snap, market))
         bucket = None
         if want_cons and DeltaBucket.CONSERVATIVE in snap.buckets:
             bucket = snap.buckets[DeltaBucket.CONSERVATIVE]
@@ -400,10 +527,13 @@ def heuristic_desk(
         if want_cons:
             why = _L(
                 lang,
-                "Soft macro or reduce event → conservative (or spread).",
-                "有软宏观或降风险事件，改用保守档（或价差）。",
+                "Soft macro, reduce event, or quality/regime → conservative (or spread).",
+                "有软宏观、降风险事件或质量/体制信号，改用保守档（或价差）。",
             )
-        why = f"{why}{_last_print_why(bucket, lang)}"
+        extra = _quality_why(snap, market, lang)
+        if extra:
+            why = f"{why} {extra}"
+        why = f"{why}{_inside_em_why(bucket, lang)}{_last_print_why(bucket, lang)}"
         decisions.append(
             TickerDecision(
                 ticker=snap.ticker,
@@ -698,12 +828,13 @@ def run_desk_llm(
     cash: float,
     settings: Settings,
     llm,
+    market: MarketRegime | None = None,
 ) -> DeskOutput:
     mode = str(getattr(settings, "desk_mode", "put")).lower()
     lang = settings.output_language
     if llm is None:
         return _finalize_desk(
-            heuristic_desk(snapshots, events, cash, lang, mode=mode),
+            heuristic_desk(snapshots, events, cash, lang, mode=mode, market=market),
             snapshots,
             cash,
             lang,
@@ -717,6 +848,7 @@ def run_desk_llm(
         mode=mode,
         shares=float(getattr(settings, "shares", 100) or 100),
         cost_basis=float(getattr(settings, "cost_basis", 0) or 0),
+        market=market,
     )
     try:
         parsed = invoke_structured(
@@ -734,7 +866,7 @@ def run_desk_llm(
             used_llm=True,
         )
     except Exception as exc:
-        fallback = heuristic_desk(snapshots, events, cash, lang, mode=mode)
+        fallback = heuristic_desk(snapshots, events, cash, lang, mode=mode, market=market)
         fallback.portfolio_note = _L(
             lang,
             f"LLM desk failed ({exc}); used heuristic.",

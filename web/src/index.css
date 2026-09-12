@@ -934,6 +934,151 @@ a:focus-visible {
   vertical-align: 0.08em;
 }
 
+.quality-panel {
+  margin-top: 0.85rem;
+}
+
+.quality-kicker {
+  margin: 0 0 0.45rem;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+
+.quality-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem 0.75rem;
+  margin: 0;
+}
+
+.bucket-table th,
+.bucket-table td {
+  white-space: nowrap;
+  padding-right: 0.7rem;
+  vertical-align: top;
+}
+
+.bucket-table .contract-id {
+  max-width: 9.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quality-stat dt {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+.quality-stat dd {
+  margin: 0.1rem 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  color: var(--chalk);
+}
+
+.quality-em {
+  margin: 0.55rem 0 0;
+  font-size: 12px;
+  color: var(--chalk);
+}
+
+.em-ruler {
+  margin-top: 0.7rem;
+}
+
+.em-track {
+  position: relative;
+  height: 14px;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  background: var(--night);
+}
+
+.em-band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--brass) 28%, transparent);
+}
+
+.em-spot,
+.em-strike {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--brass);
+}
+
+.em-strike {
+  width: 2px;
+  background: var(--chalk);
+}
+
+.em-strike.is-inside {
+  background: var(--skip);
+}
+
+.em-caption,
+.em-legs {
+  margin: 0.4rem 0 0;
+  font-size: 11px;
+  color: var(--mute);
+}
+
+.em-legs {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0;
+  list-style: none;
+}
+
+.em-legs li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.regime-strip {
+  padding: 0.55rem 0.7rem 0.65rem;
+  border: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--card) 70%, var(--night));
+}
+
+.regime-strip.is-caution {
+  border-color: color-mix(in srgb, var(--skip) 55%, var(--hairline));
+}
+
+.regime-strip.is-open {
+  border-color: color-mix(in srgb, var(--open) 50%, var(--hairline));
+}
+
+.regime-label {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+}
+
+.regime-why {
+  margin: 0.25rem 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--mute);
+}
+
+@media (min-width: 640px) {
+  .quality-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pulse-dot,
   .work-reel-track::after,

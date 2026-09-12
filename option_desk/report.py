@@ -10,6 +10,36 @@ from option_desk.i18n import localize_hard_reason, normalize_lang, t
 from option_desk.schemas import DeltaBucket, DeskRun, TickerSnapshot
 
 
+def _pct(value: float | None) -> str:
+    if value is None:
+        return "—"
+    return f"{value:.0%}"
+
+
+def _iv_lines(snapshot: TickerSnapshot, lang: str) -> list[str]:
+    ctx = snapshot.iv_context
+    if ctx is None:
+        return []
+    lines = [
+        f"- {t(lang, 'md_iv')}: ATM {_pct(ctx.atm_iv)} · HV20 {_pct(ctx.hv_20)} · "
+        f"HV60 {_pct(ctx.hv_60)} · HV120 {_pct(ctx.hv_120)} · {ctx.regime.value}"
+    ]
+    if ctx.expected_move_pct is not None:
+        dollars = f"${ctx.expected_move:.2f}" if ctx.expected_move is not None else "—"
+        dte = ctx.expected_move_dte if ctx.expected_move_dte is not None else "?"
+        lines.append(
+            f"- {t(lang, 'md_em')}: ±{ctx.expected_move_pct:.1%} ({dollars}, {dte} DTE)"
+        )
+    return lines
+
+
+def _score_bit(cand, lang: str) -> str:
+    if not cand.score:
+        return ""
+    where = t(lang, "md_inside_em") if cand.score.inside_expected_move else t(lang, "md_outside_em")
+    return f" {t(lang, 'md_score')} {cand.score.total} {where}"
+
+
 def _spread_text(cand, lang: str) -> str:
     if not cand.spread:
         return t(lang, "md_spread_na")
@@ -42,7 +72,7 @@ def _bucket_rows(snapshot: TickerSnapshot, lang: str) -> list[str]:
                 f"{t(lang, 'bid_ask')} {cand.csp.bid:.2f}/{cand.csp.ask:.2f} "
                 f"{t(lang, 'premium')} ${cand.premium_per_contract:.0f}/张{last_mark} "
                 f"CSP {cand.csp_contracts} 张 {t(lang, 'assign')} ${cand.assignment_cash:,.0f}；"
-                f"价差 {_spread_text(cand, lang)}"
+                f"价差 {_spread_text(cand, lang)}{_score_bit(cand, lang)}"
             )
             continue
         last_mark = " last-print" if cand.csp.quote_source.value == "last" else ""
@@ -52,7 +82,7 @@ def _bucket_rows(snapshot: TickerSnapshot, lang: str) -> list[str]:
             f"bid/ask {cand.csp.bid:.2f}/{cand.csp.ask:.2f} "
             f"premium ${cand.premium_per_contract:.0f}/ct{last_mark} "
             f"CSP {cand.csp_contracts} ct assign ${cand.assignment_cash:,.0f}; "
-            f"spread {_spread_text(cand, lang)}"
+            f"spread {_spread_text(cand, lang)}{_score_bit(cand, lang)}"
         )
     return rows
 
@@ -68,6 +98,12 @@ def render_markdown(run: DeskRun) -> str:
         f"- {t(lang, 'md_chain')}",
         "",
     ]
+    if run.market:
+        lines.append(f"## {t(lang, 'md_market')}")
+        lines.append(f"- **{run.market.label.value}**")
+        if run.market.why:
+            lines.append(f"- {run.market.why}")
+        lines.append("")
     if run.warnings:
         lines.append(f"## {t(lang, 'md_warnings')}")
         lines.extend(f"- {w}" for w in run.warnings)
@@ -96,6 +132,7 @@ def render_markdown(run: DeskRun) -> str:
                 f"- {t(lang, 'md_soft')}: "
                 + ", ".join(f"{m.kind} {m.event_date}" for m in snap.calendar.soft_macros)
             )
+        lines.extend(_iv_lines(snap, lang))
         lines.extend(snap.notes)
         lines.append("")
         lines.append(f"### {t(lang, 'md_buckets')}")
@@ -141,6 +178,11 @@ def print_run(run: DeskRun, console: Console | None = None) -> None:
         f"{t(lang, 'cash_label')} ${run.cash:,.0f} | LLM={run.llm_label}"
     )
     console.print(f"[dim]{t(lang, 'data_note')}[/dim]")
+    if run.market:
+        console.print(
+            f"[bold]{t(lang, 'market')}[/bold] {run.market.label.value}"
+            + (f" · {run.market.why}" if run.market.why else "")
+        )
     for warning in run.warnings:
         console.print(f"[yellow]{t(lang, 'warning')}[/yellow] {warning}")
 
@@ -170,12 +212,13 @@ def print_run(run: DeskRun, console: Console | None = None) -> None:
         table.add_column(t(lang, "dte"))
         table.add_column(t(lang, "bid_ask"))
         table.add_column(t(lang, "premium"))
+        table.add_column(t(lang, "score"))
         table.add_column(t(lang, "csp_qty"))
         table.add_column(t(lang, "assign"))
         for bucket in (DeltaBucket.CONSERVATIVE, DeltaBucket.STANDARD):
             cand = snap.buckets.get(bucket)
             if not cand:
-                table.add_row(bucket.value, "—", "—", "—", "—", "—", "—", "—", "—")
+                table.add_row(bucket.value, "—", "—", "—", "—", "—", "—", "—", "—", "—")
                 continue
             table.add_row(
                 bucket.value,
@@ -189,10 +232,23 @@ def print_run(run: DeskRun, console: Console | None = None) -> None:
                     if cand.csp.quote_source.value == "last"
                     else f"${cand.premium_per_contract:.0f}"
                 ),
+                str(cand.score.total) if cand.score else "—",
                 str(cand.csp_contracts),
                 f"{cand.assignment_cash:,.0f}",
             )
         console.print(table)
+        ctx = snap.iv_context
+        if ctx is not None:
+            console.print(
+                f"[dim]{t(lang, 'iv_vs_hv')} ATM {_pct(ctx.atm_iv)} HV20 {_pct(ctx.hv_20)} "
+                f"{ctx.regime.value}"
+                + (
+                    f" · {t(lang, 'expected_move')} ±{ctx.expected_move_pct:.1%}"
+                    if ctx.expected_move_pct is not None
+                    else ""
+                )
+                + "[/dim]"
+            )
         if snap.calendar.hard_skip:
             reasons = "; ".join(localize_hard_reason(r, lang) for r in snap.calendar.hard_reasons)
             console.print(f"[red]{t(lang, 'hard_skip')}[/red] {reasons}")

@@ -17,6 +17,8 @@ CLI 目前仍只跑卖 Put；Call 账只在 Web 里。
 
 - 从 yfinance 拉**实时期权链**，用链上 IV + Black-Scholes **估算** Put / Call Delta（不是交易所官方 Greek）
 - 筛出 `conservative`（约 0.10Δ）和 `standard`（约 0.20Δ）两档候选；`0.2Δ` 是默认锚，不是死门。卖 call 时保守档更虚值（更高行权价）
+- 用 ATM IV 对比 20/60/120 日已实现波动（不是历史 IV 分位数）、1σ 预期波动 vs 行权价距离，以及 0–100 合约评分
+- VIX + SPY/QQQ 市场体制是**降风险**信号（偏向保守档），单独不会硬 SKIP
 - 持有期内撞上财报或 FOMC → **硬 SKIP**（不许改成更小 Delta 继续卖）
 - CPI / NFP / PCE 作为软标签交给终审
 - LLM 按固定 query 搜日历外突发（出口管制、capex、诉讼等）
@@ -185,12 +187,14 @@ location /api/runs {
 
 ## 流水线
 
-1. 拉链、估 Delta、筛两档合约（Put 链或 Call 链，由账本决定）
-2. 持有期内遇财报或 FOMC → 硬 SKIP
-3. CPI / NFP / PCE 作为软标签
-4. LLM 按固定 query 搜日历外突发
-5. 终审输出动作 + 结构 + 档位 + **档位里的 `contract_id`**
-6. OPEN 时附到期损益：Put 按卖出权利；Call 按「股票相对成本价 + 卖 call」
+1. 读 VIX / SPY / QQQ 市场体制（只降风险，不硬 SKIP）
+2. 拉链、估 Delta、筛两档合约（Put 链或 Call 链，由账本决定）
+3. 挂上 IV vs 已实现波动、预期波动、合约评分
+4. 持有期内遇财报或 FOMC → 硬 SKIP
+5. CPI / NFP / PCE 作为软标签
+6. LLM 按固定 query 搜日历外突发
+7. 终审输出动作 + 结构 + 档位 + **档位里的 `contract_id`**
+8. OPEN 时附到期损益：Put 按卖出权利；Call 按「股票相对成本价 + 卖 call」
 
 CLI 走 `run_desk()`（卖 Put）；Web 走同一条路上的 `iter_desk()`，用 `desk_mode=put|call` 分账，逐步推 SSE。不要把筛子逻辑再写一遍。
 
@@ -213,7 +217,7 @@ pytest
 
 ```
 option_desk/          Python 包：筛子、日历、侦察、终审、CLI、FastAPI
-  chain/              期权链 + Black-Scholes Delta
+  chain/              期权链、Delta、IV vs HV、预期波动、市场体制
   calendar/           财报 / FOMC / CPI / NFP / PCE 门控
   events/             搜索 + LLM 事件分类
   agents/             结构化终审
@@ -228,6 +232,7 @@ docker-compose.yml
 ## 明确不做
 
 - 经纪商下单、持仓同步、盘中监控
+- 历史 IV 分位数库、全市场扫描器
 - 多用户账号 / OAuth、历史会话落库
 - aggressive（>0.25Δ）档、看涨价差、指数/加密期权
 - CLI 卖 Call（Call 账只在 Web）
