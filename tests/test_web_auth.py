@@ -174,3 +174,31 @@ def test_invalid_ticker_follows_language(client):
     )
     assert en.status_code == 422
     assert "Invalid ticker" in en.json()["detail"]
+
+
+def test_spa_html_revalidates_and_assets_are_immutable(tmp_path, monkeypatch):
+    dist = tmp_path / "dist"
+    assets = dist / "assets"
+    assets.mkdir(parents=True)
+    (dist / "index.html").write_text(
+        "<!doctype html><script src='/assets/index-abc.js'></script>",
+        encoding="utf-8",
+    )
+    (dist / "favicon.png").write_bytes(b"\x89PNG")
+    (assets / "index-abc.js").write_text("console.log(1)", encoding="utf-8")
+    monkeypatch.setattr("option_desk.web.app._dist_dir", lambda: dist)
+
+    with TestClient(create_app()) as test_client:
+        html = test_client.get("/")
+        assert html.status_code == 200
+        assert "no-cache" in html.headers["cache-control"]
+
+        icon = test_client.get("/favicon.png")
+        assert icon.status_code == 200
+        assert "no-cache" in icon.headers["cache-control"]
+
+        js = test_client.get("/assets/index-abc.js")
+        assert js.status_code == 200
+        cache = js.headers["cache-control"]
+        assert "immutable" in cache
+        assert "max-age=31536000" in cache

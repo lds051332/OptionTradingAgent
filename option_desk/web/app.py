@@ -9,9 +9,10 @@ from pathlib import Path
 from typing import AsyncIterator, Literal
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from option_desk.config import (
     MAX_RUN_DELTA,
@@ -107,6 +108,48 @@ def _dist_dir() -> Path:
     return project_root() / "web" / "dist"
 
 
+# Vite already fingerprints /assets/* (Django ManifestStaticFiles / WhiteNoise equivalent).
+# HTML and other unhashed public files must revalidate, or browsers keep the old entry.
+HTML_CACHE_CONTROL = "no-cache, must-revalidate"
+ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
+
+
+class HashedStaticFiles(StaticFiles):
+    def file_response(self, *args, **kwargs) -> Response:
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = ASSET_CACHE_CONTROL
+        return response
+
+
+class SpaCacheMiddleware:
+    """Revalidate the SPA shell; hashed /assets/ may be cached forever."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        path = scope.get("path") or ""
+        if path.startswith("/api/") or path.startswith("/assets/"):
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_cache(message: dict) -> None:
+            if message["type"] == "http.response.start":
+                headers = [
+                    (k, v)
+                    for k, v in message.get("headers", [])
+                    if k.lower() != b"cache-control"
+                ]
+                headers.append((b"cache-control", HTML_CACHE_CONTROL.encode("latin-1")))
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, send_with_cache)
+
+
 async def _iter_sse(
     tickers: list[str],
     delta: float,
@@ -171,6 +214,7 @@ async def _iter_sse(
 def create_app() -> FastAPI:
     load_project_env()
     app = FastAPI(title="Option Desk", docs_url=None, redoc_url=None)
+    app.add_middleware(SpaCacheMiddleware)
 
     @app.get("/api/me")
     def me() -> dict:
@@ -210,7 +254,7 @@ def create_app() -> FastAPI:
     dist = _dist_dir()
     assets = dist / "assets"
     if assets.is_dir():
-        app.mount("/assets", StaticFiles(directory=assets), name="assets")
+        app.mount("/assets", HashedStaticFiles(directory=assets), name="assets")
 
     if dist.is_dir():
 
@@ -220,8 +264,11 @@ def create_app() -> FastAPI:
             if dist.resolve() not in (target, *target.parents):
                 raise HTTPException(status_code=404)
             if target.is_file():
-                return FileResponse(target)
-            return FileResponse(dist / "index.html")
+                return FileResponse(target, headers={"Cache-Control": HTML_CACHE_CONTROL})
+            return FileResponse(
+                dist / "index.html",
+                headers={"Cache-Control": HTML_CACHE_CONTROL},
+            )
 
     return app
 
