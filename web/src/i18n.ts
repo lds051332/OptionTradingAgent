@@ -367,27 +367,37 @@ function getPath(pack: unknown, path: string): string {
   return typeof node === "string" ? node : "";
 }
 
-export function detectLang(): Lang {
+export function readStoredLang(): Lang | null {
   try {
     const stored = window.localStorage.getItem(STORAGE_KEY);
     if (stored === "zh" || stored === "en") return stored;
   } catch {
     /* ignore */
   }
+  return null;
+}
+
+export function browserLang(): Lang {
   const nav = (typeof navigator !== "undefined" ? navigator.language : "")?.toLowerCase() ?? "";
   return nav.startsWith("zh") ? "zh" : nav ? "en" : "zh";
+}
+
+export function detectLang(): Lang {
+  return readStoredLang() ?? browserLang();
 }
 
 export function getLang(): Lang {
   return activeLang;
 }
 
-export function setActiveLang(lang: Lang): void {
+export function setActiveLang(lang: Lang, options?: { persist?: boolean }): void {
   activeLang = lang;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, lang);
-  } catch {
-    /* ignore */
+  if (options?.persist !== false) {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, lang);
+    } catch {
+      /* ignore */
+    }
   }
   if (typeof document !== "undefined") {
     document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";

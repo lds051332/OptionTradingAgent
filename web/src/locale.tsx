@@ -3,7 +3,7 @@ import { detectLang, setActiveLang, t as translate, type Lang, type MsgKey } fro
 
 type LocaleCtx = {
   lang: Lang;
-  setLang: (lang: Lang) => void;
+  setLang: (lang: Lang, options?: { persist?: boolean }) => void;
   t: (key: MsgKey, vars?: Record<string, string | number>) => string;
 };
 
@@ -12,15 +12,15 @@ const LocaleContext = createContext<LocaleCtx | null>(null);
 export function LocaleProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(() => {
     const initial = detectLang();
-    setActiveLang(initial);
+    setActiveLang(initial, { persist: false });
     return initial;
   });
 
   const value = useMemo<LocaleCtx>(() => {
     return {
       lang,
-      setLang: (next) => {
-        setActiveLang(next);
+      setLang: (next, options) => {
+        setActiveLang(next, options);
         setLangState(next);
       },
       t: (key, vars) => translate(lang, key, vars),

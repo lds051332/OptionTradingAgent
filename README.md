@@ -46,7 +46,7 @@ The desk stamps only `SKIP` or `OPEN`. OPEN includes an expiration P/L chart.
 
 ![Desk stamp and expiration P/L](screenshots/3_en.png)
 
-The chrome follows the in-page **EN / 中文** switch (saved in the browser). Each analysis sends that language, so progress lines, warnings, and LLM prose match.
+First visit picks Chinese for a mainland China IP and English otherwise. The in-page **EN / 中文** switch is saved in the browser and wins after that. Each analysis sends the current language, so progress lines, warnings, and LLM prose match.
 
 ## Requirements
 
@@ -167,6 +167,7 @@ location / {
     proxy_pass http://127.0.0.1:8000;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_buffering off;

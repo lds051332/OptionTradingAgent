@@ -137,6 +137,13 @@ def test_me_includes_shares(client):
     assert "shares" in body
     assert "cost_basis" in body
     assert body["language"] in {"en", "zh"}
+    assert body["suggested_language"] is None
+
+
+def test_me_suggests_zh_for_china_ip(client, monkeypatch):
+    monkeypatch.setattr("option_desk.web.app.suggested_language", lambda request: "zh")
+    body = client.get("/api/me", headers={"X-Forwarded-For": "114.114.114.114"}).json()
+    assert body["suggested_language"] == "zh"
 
 
 def test_runs_uses_request_language(client, monkeypatch):

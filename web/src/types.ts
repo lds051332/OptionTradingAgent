@@ -13,6 +13,7 @@ export type Defaults = {
   shares?: number;
   cost_basis?: number | null;
   language?: string;
+  suggested_language?: string | null;
 };
 
 export type DeskMode = "put" | "call";

@@ -4,13 +4,14 @@ import { BrandSeal } from "./Brand";
 import { Desk } from "./Desk";
 import { Home } from "./Home";
 import { PageFrame } from "./PageFrame";
+import { readStoredLang } from "./i18n";
 import { useI18n } from "./locale";
 import { useRouter } from "./router";
 import type { Defaults } from "./types";
 
 export function App() {
   const { path, navigate } = useRouter();
-  const { lang, t } = useI18n();
+  const { lang, setLang, t } = useI18n();
   const [ready, setReady] = useState(false);
   const [defaults, setDefaults] = useState<Defaults | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -19,6 +20,10 @@ export function App() {
     setError(null);
     try {
       const me = await fetchMe();
+      const suggested = me.suggested_language;
+      if (!readStoredLang() && (suggested === "zh" || suggested === "en")) {
+        setLang(suggested, { persist: false });
+      }
       setDefaults(me);
     } catch (err) {
       setDefaults(null);

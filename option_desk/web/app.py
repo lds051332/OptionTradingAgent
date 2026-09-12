@@ -26,6 +26,7 @@ from option_desk.config import (
     load_project_env,
     project_root,
 )
+from option_desk.geoip import suggested_language
 from option_desk.i18n import lang_from_headers, normalize_lang, t
 from option_desk.pipeline import iter_desk
 from option_desk.stream import StreamEvent
@@ -217,8 +218,11 @@ def create_app() -> FastAPI:
     app.add_middleware(SpaCacheMiddleware)
 
     @app.get("/api/me")
-    def me() -> dict:
-        return _defaults()
+    def me(request: Request) -> dict:
+        settings = get_settings()
+        payload = _defaults(settings)
+        payload["suggested_language"] = suggested_language(request)
+        return payload
 
     @app.post("/api/runs")
     async def create_run(body: RunBody, request: Request) -> StreamingResponse:

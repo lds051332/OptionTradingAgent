@@ -46,7 +46,7 @@ Web 上改 Delta 锚时，保守档按 `0.11 / 0.20` 比例缩放。
 
 ![终审盖章与到期损益](screenshots/3.png)
 
-界面壳跟页头的 **EN / 中文** 开关走（记在浏览器里）。每次分析会带上当前语言，进度句、警告和 LLM 正文与之一致。
+第一次打开按访问者 IP 选语言（中国大陆默认中文，其它地区默认英文）。页头 **EN / 中文** 开关会记在浏览器里，之后以手动选择为准。每次分析会带上当前语言，进度句、警告和 LLM 正文与之一致。
 
 ## 要求
 
@@ -167,6 +167,7 @@ location / {
     proxy_pass http://127.0.0.1:8000;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_buffering off;
