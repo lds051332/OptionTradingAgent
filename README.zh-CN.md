@@ -32,21 +32,9 @@ Web 上改 Delta 锚时，保守档按 `0.11 / 0.20` 比例缩放。
 
 ## 界面
 
-打开决策台后先选账本：持币卖 put，或持股卖 covered call。
+打开决策台后先选账本：持币卖 put，或持股卖 covered call。一趟分析就地摊开：两档候选、日历门控、事件侦察，终审只盖 `SKIP` 或 `OPEN`（OPEN 时附到期损益图）。
 
-![本周两本账](screenshots/home.png)
-
-决策台先筛链，给出 `conservative` / `standard` 两档候选（下图为卖 Call）。
-
-![筛链两档候选](screenshots/1.png)
-
-日历门控看持有期内的财报 / FOMC / 宏观日，事件侦察再扫日历外突发。
-
-![日历门控与事件侦察](screenshots/2.png)
-
-终审只盖 `SKIP` 或 `OPEN`，OPEN 时附到期损益图。
-
-![终审盖章与到期损益](screenshots/3.png)
+![卖 Put 决策台一趟完整流程](screenshots/screenshots_zh-CN.png)
 
 第一次打开按访问者 IP 选语言（中国大陆默认中文，其它地区默认英文）。页头 **EN / 中文** 开关会记在浏览器里，之后以手动选择为准。每次分析会带上当前语言，进度句、警告和 LLM 正文与之一致。
 
