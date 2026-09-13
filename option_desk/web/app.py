@@ -4,14 +4,14 @@ import asyncio
 import os
 import re
 import threading
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import AsyncIterator, Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from option_desk.config import (
@@ -29,6 +29,14 @@ from option_desk.config import (
 from option_desk.geoip import suggested_language
 from option_desk.i18n import lang_from_headers, normalize_lang, t
 from option_desk.pipeline import iter_desk
+from option_desk.positions.evaluate import (
+    PositionInput,
+    RuleSettings,
+    evaluate_positions,
+)
+from option_desk.positions.market import is_us_equity_rth
+from option_desk.positions.roll import collect_roll_candidates
+from option_desk.schemas import ContractQuote
 from option_desk.stream import StreamEvent
 
 TICKER_RE = re.compile(r"^[A-Za-z][A-Za-z.]{0,9}$")
@@ -42,6 +50,45 @@ class RunBody(BaseModel):
     shares: float | None = None
     cost_basis: float | None = None
     language: str | None = None
+
+
+class PositionEvaluateItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str
+    ticker: str
+    strategy: Literal["CSP", "COVERED_CALL"]
+    option_type: Literal["PUT", "CALL"] = Field(alias="optionType")
+    expiry: date
+    strike: float
+    contracts: int = Field(ge=1)
+    entry_premium: float = Field(alias="entryPremium", ge=0)
+    assignment_ok: bool = Field(default=True, alias="assignmentOk")
+
+
+class PositionRuleBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    profit_target: float = Field(default=0.75, alias="profitTarget", gt=0, le=1)
+    near_expiry_dte: int = Field(default=2, alias="nearExpiryDte", ge=0, le=14)
+    near_expiry_profit_target: float = Field(default=0.50, alias="nearExpiryProfitTarget", gt=0, le=1)
+
+
+class EvaluateBody(BaseModel):
+    positions: list[PositionEvaluateItem]
+    settings: PositionRuleBody = Field(default_factory=PositionRuleBody)
+
+
+class RollBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    ticker: str
+    option_type: Literal["PUT", "CALL"] = Field(alias="optionType")
+    expiry: date
+    strike: float
+    contracts: int = Field(ge=1)
+    estimated_close_price: float | None = Field(default=None, alias="estimatedClosePrice")
+    target_delta: float | None = Field(default=None, alias="targetDelta")
 
 
 def _lang(request: Request, explicit: str | None = None) -> str:
@@ -90,6 +137,36 @@ def _validate_run(body: RunBody, lang: str) -> tuple[list[str], float, float, st
     if body.cash < 1000 or body.cash > 10_000_000:
         raise HTTPException(status_code=422, detail=t(lang, "web_cash_range"))
     return tickers, float(body.delta), float(body.cash), "put", 100.0, 0.0
+
+
+def _one_ticker(raw: str, lang: str) -> str:
+    return _normalize_tickers([raw], lang)[0]
+
+
+def _contract_payload(quote: ContractQuote | None) -> dict | None:
+    if quote is None:
+        return None
+    return quote.model_dump(mode="json")
+
+
+def _evaluation_payload(item) -> dict:
+    return {
+        "positionId": item.position_id,
+        "fetchedAt": item.fetched_at.isoformat(),
+        "marketOpen": item.market_open,
+        "underlyingSpot": item.underlying_spot,
+        "contract": _contract_payload(item.contract),
+        "estimatedClosePrice": item.estimated_close_price,
+        "markPnl": item.mark_pnl,
+        "estimatedClosePnl": item.estimated_close_pnl,
+        "profitCapture": item.profit_capture,
+        "itm": item.itm,
+        "management": {
+            "action": item.management.action,
+            "reasons": item.management.reasons,
+        },
+        "warnings": item.warnings,
+    }
 
 
 def _defaults(settings: Settings | None = None) -> dict:
@@ -254,6 +331,83 @@ def create_app() -> FastAPI:
                 "X-Accel-Buffering": "no",
             },
         )
+
+    @app.post("/api/positions/evaluate")
+    def evaluate_open_positions(body: EvaluateBody, request: Request) -> dict:
+        lang = _lang(request)
+        fetched_at = datetime.now(timezone.utc)
+        market_open = is_us_equity_rth(fetched_at)
+        if not body.positions:
+            return {
+                "evaluations": [],
+                "fetchedAt": fetched_at.isoformat(),
+                "marketOpen": market_open,
+            }
+        parsed: list[PositionInput] = []
+        for item in body.positions:
+            ticker = _one_ticker(item.ticker, lang)
+            parsed.append(
+                PositionInput(
+                    id=item.id,
+                    ticker=ticker,
+                    strategy=item.strategy,
+                    option_type=item.option_type,
+                    expiry=item.expiry,
+                    strike=item.strike,
+                    contracts=item.contracts,
+                    entry_premium=item.entry_premium,
+                    assignment_ok=item.assignment_ok,
+                )
+            )
+        rules = RuleSettings(
+            profit_target=body.settings.profit_target,
+            near_expiry_dte=body.settings.near_expiry_dte,
+            near_expiry_profit_target=body.settings.near_expiry_profit_target,
+        )
+        results = evaluate_positions(parsed, rules=rules, now=fetched_at)
+        return {
+            "evaluations": [_evaluation_payload(item) for item in results],
+            "fetchedAt": fetched_at.isoformat(),
+            "marketOpen": market_open,
+        }
+
+    @app.post("/api/positions/roll-candidates")
+    def roll_candidates(body: RollBody, request: Request) -> dict:
+        lang = _lang(request)
+        ticker = _one_ticker(body.ticker, lang)
+        fetched_at = datetime.now(timezone.utc)
+        market_open = is_us_equity_rth(fetched_at)
+        try:
+            candidates, current, _spot = collect_roll_candidates(
+                ticker=ticker,
+                option_type=body.option_type,
+                expiry=body.expiry,
+                strike=body.strike,
+                contracts=body.contracts,
+                estimated_close_price=body.estimated_close_price,
+                target_delta=body.target_delta,
+            )
+        except Exception:
+            return {
+                "candidates": [],
+                "current": None,
+                "fetchedAt": fetched_at.isoformat(),
+                "marketOpen": market_open,
+            }
+        return {
+            "candidates": [
+                {
+                    "contract": _contract_payload(item.contract),
+                    "estimatedNetPerShare": item.estimated_net_per_share,
+                    "estimatedNet": item.estimated_net,
+                    "recommended": item.recommended,
+                }
+                for item in candidates
+            ],
+            "current": _contract_payload(current),
+            "fetchedAt": fetched_at.isoformat(),
+            "marketOpen": market_open,
+        }
 
     dist = _dist_dir()
     assets = dist / "assets"
