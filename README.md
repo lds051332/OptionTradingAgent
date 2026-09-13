@@ -4,12 +4,13 @@ A short-dated US-equity **wheel desk**. It recommends. It does not send orders. 
 
 [中文说明](README.zh-CN.md)
 
-Pick a book: cash-secured puts, or covered calls on shares you already hold. Both books share one pipeline: screen the chain → calendar gate → event scout → structured desk. DTE 3–9 days.
+Pick a book: cash-secured puts, covered calls on shares you already hold, or — optionally — positions you already opened. The two entry books share one pipeline: screen the chain → calendar gate → event scout → structured desk. DTE 3–9 days. You can skip My Positions entirely; the desks still run.
 
 - **Cash-secured puts**: cash-secured put or bull put spread
 - **Covered calls**: covered calls only (no call spreads). Contracts = shares `// 100`. Cost basis is required so assignment can be judged against what you paid.
+- **My Positions** (Web, optional): record CSP / covered-call fills in this browser, revalue them live, and get HOLD / CLOSE / ROLL. An `OPEN` stamp never auto-saves a position — you confirm the actual fill. Bull put spreads stay on the put desk only.
 
-The CLI still runs puts only. The call book is Web-only.
+The CLI still runs puts only. The call book and position manager are Web-only.
 
 > **Not investment advice. Not automated trading.** Output is for a human to review. Options can lose the entire premium. A CSP assignment needs cash on hand; a covered-call assignment sells the shares at the strike.
 
@@ -27,12 +28,13 @@ The CLI still runs puts only. The call book is Web-only.
   - Calls: `COVERED_CALL`
 - Runs without an API key: event classification and the desk fall back to heuristics
 - The Web desk streams progress over SSE. Docker Compose ships one container.
+- Optional Web position book: live quote on the contract you recorded (not the 3–9 DTE entry screen), profit capture, near-expiry / assignment rules. CLOSE beats ROLL. No LLM in the action. Fills live in `localStorage` with JSON import / export — not a broker, not a database.
 
 Changing the Delta anchor on the Web scales the conservative bucket by `0.11 / 0.20`.
 
 ## UI
 
-Open the desk and pick a book: cash-secured puts, or covered calls. One run then unfolds in place: two buckets, calendar gate, event scout, and a `SKIP` / `OPEN` stamp (OPEN includes an expiration P/L chart).
+Open the desk and pick a book: cash-secured puts, covered calls, or My Positions (optional). An entry run unfolds in place: two buckets, calendar gate, event scout, and a `SKIP` / `OPEN` stamp (OPEN includes an expiration P/L chart). After `OPEN` on a CSP or covered call you can add the fill to My Positions; skip that and nothing is stored. My Positions revalues open fills and recommends HOLD / CLOSE / ROLL — you still type the actual close or roll prices.
 
 ![One run of the put desk](screenshots/screenshot_en.png)
 
@@ -131,7 +133,7 @@ chmod +x scripts/desk.sh
 ./scripts/desk.sh --stop
 ```
 
-Default URL: `http://127.0.0.1:8000`. You land on the two-book gate (puts / calls); the run unfolds step by step. The script handles an existing process, a missing `.venv`, missing deps, a missing `.env`, and a stale or missing frontend `dist`.
+Default URL: `http://127.0.0.1:8000`. You land on three cards (puts / calls / optional positions); an entry run unfolds step by step. The script handles an existing process, a missing `.venv`, missing deps, a missing `.env`, and a stale or missing frontend `dist`.
 
 Or run two terminals yourself:
 
@@ -184,7 +186,7 @@ location /api/runs {
 7. Desk emits action + structure + bucket + a **`contract_id` from that bucket**
 8. OPEN includes expiration P/L: puts as a short option; calls as stock vs cost basis plus the short call
 
-The CLI uses `run_desk()` (puts). The Web uses `iter_desk()` on the same path, with `desk_mode=put|call`, and streams SSE. Do not reimplement the screener.
+The CLI uses `run_desk()` (puts). The Web uses `iter_desk()` on the same path, with `desk_mode=put|call`, and streams SSE. Position evaluation is a separate pair of POSTs (`/api/positions/evaluate`, `/api/positions/roll-candidates`); they do not change `/api/runs`. Do not reimplement the screener. Roll candidates reuse the same 3–9 DTE screen.
 
 ```python
 from datetime import date
@@ -209,8 +211,9 @@ option_desk/          Python package: screener, calendar, scout, desk, CLI, Fast
   calendar/           Earnings / FOMC / CPI / NFP / PCE gates
   events/             Search + LLM event classification
   agents/             Structured desk
-  web/                FastAPI (SSE)
-web/                  Vite + React desk
+  positions/          Live revalue + HOLD/CLOSE/ROLL rules (no persistence)
+  web/                FastAPI (SSE + position evaluate/roll)
+web/                  Vite + React desk (entry books + optional position book)
 screenshots/          Web screenshots for this README
 tests/
 Dockerfile            Build the frontend, then serve static files from uvicorn
@@ -219,10 +222,13 @@ docker-compose.yml
 
 ## Explicitly out of scope
 
-- Broker orders, position sync, intraday monitoring
+- Broker orders, broker position sync, auto-send, login / multi-user
+- Database-backed positions (the optional book is this-browser `localStorage` only)
+- Bull put spread (or other multi-leg) position management
+- LLM deciding HOLD / CLOSE / ROLL
 - Historical IV percentile store or a market-wide scanner
 - Multi-user accounts / OAuth, persisted chat history
 - Aggressive (>0.25Δ) buckets, call spreads, index / crypto options
-- CLI covered calls (the call book is Web-only)
+- CLI covered calls or CLI position manager (those are Web-only)
 
 TradingAgents is a structural reference only. This package does not depend on it.

@@ -4,12 +4,13 @@
 
 [English](README.md)
 
-先选账本：持币卖 put，或持股卖 covered call。两条账共用同一条流水线：拉链 → 日历门控 → 事件侦察 → 结构化终审。DTE 3–9 天。
+先选账本：持币卖 put，持股卖 covered call，或——可选——已经开出的仓。前两本账共用同一条流水线：拉链 → 日历门控 → 事件侦察 → 结构化终审。DTE 3–9 天。可以完全不进「我的持仓」，决策台照跑。
 
 - **持币卖 Put**：Cash-secured Put 或 Bull Put Spread
 - **持股卖 Call**：只卖 Covered Call（不做看涨价差）。张数 = 持股 `// 100`，并填成本价，用来判断被指派是否划算
+- **我的持仓**（仅 Web，可选）：在本机浏览器记下 CSP / Covered Call 成交，实时重新估值，给出 HOLD / CLOSE / ROLL。`OPEN` 盖章不会自动入账——要你确认实际成交价。牛市看跌价差仍只在卖 Put 决策台。
 
-CLI 目前仍只跑卖 Put；Call 账只在 Web 里。
+CLI 目前仍只跑卖 Put；Call 账和持仓管理只在 Web 里。
 
 > **不是投资建议，也不是自动交易。** 输出只给人工复核。期权可能亏掉全部权利金。CSP 被指派时要准备现金；covered call 被指派即按行权价卖掉持股。
 
@@ -27,12 +28,13 @@ CLI 目前仍只跑卖 Put；Call 账只在 Web 里。
   - Call：`COVERED_CALL`
 - 没有 API key 也能跑：事件分类和终审改用启发式规则
 - Web 决策台用 SSE 逐步推进度；Docker Compose 一容器部署
+- Web 可选持仓账：按你记下的那张合约重新报价（不走开仓那套 3–9 DTE 筛链）、Profit Capture、临期 / 指派规则。CLOSE 优先于 ROLL。动作不经 LLM。成交记在 `localStorage`，可 JSON 导入导出——不接券商，不落库。
 
 Web 上改 Delta 锚时，保守档按 `0.11 / 0.20` 比例缩放。
 
 ## 界面
 
-打开决策台后先选账本：持币卖 put，或持股卖 covered call。一趟分析就地摊开：两档候选、日历门控、事件侦察，终审只盖 `SKIP` 或 `OPEN`（OPEN 时附到期损益图）。
+打开决策台后先选账本：持币卖 put、持股卖 covered call，或可选的「我的持仓」。一趟开仓分析就地摊开：两档候选、日历门控、事件侦察，终审只盖 `SKIP` 或 `OPEN`（OPEN 时附到期损益图）。CSP / Covered Call 盖 `OPEN` 后可以把成交加入持仓；不点就不记。持仓页会重新估值并建议 HOLD / CLOSE / ROLL——平仓或滚仓仍要你填实际成交价。
 
 ![卖 Put 决策台一趟完整流程](screenshots/screenshots_zh-CN.png)
 
@@ -131,7 +133,7 @@ chmod +x scripts/desk.sh
 ./scripts/desk.sh --stop
 ```
 
-默认打开 `http://127.0.0.1:8000`。进来就是两本账入口（持币卖 Put / 持股卖 Call），决策过程逐步摊开。脚本会处理：已有进程、缺 `.venv`、缺依赖、缺 `.env`、前端 `dist` 过期或缺失。
+默认打开 `http://127.0.0.1:8000`。进来是三张卡（持币卖 Put / 持股卖 Call / 可选持仓），决策过程逐步摊开。脚本会处理：已有进程、缺 `.venv`、缺依赖、缺 `.env`、前端 `dist` 过期或缺失。
 
 也可以手动开两个终端：
 
@@ -184,7 +186,7 @@ location /api/runs {
 7. 终审输出动作 + 结构 + 档位 + **档位里的 `contract_id`**
 8. OPEN 时附到期损益：Put 按卖出权利；Call 按「股票相对成本价 + 卖 call」
 
-CLI 走 `run_desk()`（卖 Put）；Web 走同一条路上的 `iter_desk()`，用 `desk_mode=put|call` 分账，逐步推 SSE。不要把筛子逻辑再写一遍。
+CLI 走 `run_desk()`（卖 Put）；Web 走同一条路上的 `iter_desk()`，用 `desk_mode=put|call` 分账，逐步推 SSE。持仓估值是另外两个 POST（`/api/positions/evaluate`、`/api/positions/roll-candidates`），不改 `/api/runs`。不要把筛子逻辑再写一遍。滚仓候选复用同一套 3–9 DTE 筛链。
 
 ```python
 from datetime import date
@@ -209,8 +211,9 @@ option_desk/          Python 包：筛子、日历、侦察、终审、CLI、Fas
   calendar/           财报 / FOMC / CPI / NFP / PCE 门控
   events/             搜索 + LLM 事件分类
   agents/             结构化终审
-  web/                FastAPI（SSE）
-web/                  Vite + React 决策台
+  positions/          实时估值 + HOLD/CLOSE/ROLL 规则（不落库）
+  web/                FastAPI（SSE + 持仓估值/滚仓）
+web/                  Vite + React 决策台（开仓账 + 可选持仓账）
 screenshots/          Web 界面截图（README 用）
 tests/
 Dockerfile            先构建前端，再由 uvicorn 托管静态文件
@@ -219,10 +222,13 @@ docker-compose.yml
 
 ## 明确不做
 
-- 经纪商下单、持仓同步、盘中监控
+- 经纪商下单、券商持仓同步、自动报单、登录 / 多用户
+- 用数据库存持仓（可选账只在本机浏览器 `localStorage`）
+- 牛市看跌价差（或多腿）持仓管理
+- 用 LLM 决定 HOLD / CLOSE / ROLL
 - 历史 IV 分位数库、全市场扫描器
 - 多用户账号 / OAuth、历史会话落库
 - aggressive（>0.25Δ）档、看涨价差、指数/加密期权
-- CLI 卖 Call（Call 账只在 Web）
+- CLI 卖 Call 或 CLI 持仓管理（那些只在 Web）
 
 TradingAgents 源码仅作组织思想上的参考，本包不依赖它。
