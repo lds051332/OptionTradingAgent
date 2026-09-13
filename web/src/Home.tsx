@@ -32,6 +32,15 @@ export function Home() {
           tone="stock"
           to="/call"
         />
+        <GateCard
+          index="03"
+          kicker={`${t("home.positionsKicker")} · ${t("home.positionsOptional")}`}
+          title={t("home.positionsTitle")}
+          body={t("home.positionsBody")}
+          action={t("home.positionsAction")}
+          tone="positions"
+          to="/positions"
+        />
       </div>
     </div>
   );
@@ -51,7 +60,7 @@ function GateCard({
   title: string;
   body: string;
   action: string;
-  tone: "cash" | "stock";
+  tone: "cash" | "stock" | "positions";
   to: string;
 }) {
   return (

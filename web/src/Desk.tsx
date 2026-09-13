@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { startRun } from "./api";
 import { BrandLockup } from "./Brand";
 import { Link } from "./router";
+import { PositionForm } from "./PositionForm";
 import { PayoffChart } from "./PayoffChart";
 import { TickerCombobox, normalizeSymbol } from "./TickerCombobox";
 import { dateLocale, type MsgKey } from "./i18n";
@@ -16,10 +17,12 @@ import type {
   ScoutedEvent,
   SearchHit,
   StreamEvent,
+  TickerDecision,
   TimelineStep,
   TickerSnapshot,
 } from "./types";
 import { QualityPanel, RegimeBlock } from "./QualityPanel";
+import { addPosition, draftFromOpenDecision, type PositionDraft } from "./positions";
 
 type Props = {
   defaults: Defaults;
@@ -180,6 +183,8 @@ export function Desk({ defaults, mode }: Props) {
   const [userPrompt, setUserPrompt] = useState<string | null>(seed?.userPrompt ?? null);
   const [error, setError] = useState<string | null>(seed?.error ?? null);
   const [cachedAt, setCachedAt] = useState<string | null>(seed?.savedAt ?? null);
+  const [draft, setDraft] = useState<PositionDraft | null>(null);
+  const [savedNote, setSavedNote] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -283,6 +288,9 @@ export function Desk({ defaults, mode }: Props) {
         <BrandLockup title={title} onHome={stopRun} />
         <div className="flex shrink-0 items-center gap-2">
           <LangSwitch />
+          <Link to="/positions" onClick={stopRun} className="inline-flex min-h-11 items-center px-2 text-sm text-[var(--mute)]">
+            {t("desk.positionsNav")}
+          </Link>
           <Link to="/" onClick={stopRun} className="inline-flex min-h-11 items-center px-2 text-sm text-[var(--mute)]">
             {t("common.back")}
           </Link>
@@ -423,8 +431,40 @@ export function Desk({ defaults, mode }: Props) {
           <p className="text-sm text-[var(--skip)]">{error}</p>
         ) : null}
 
-        {verdict ? <VerdictCard desk={verdict} mode={mode} /> : null}
+        {verdict ? (
+          <VerdictCard
+            desk={verdict}
+            mode={mode}
+            shares={shares}
+            costBasis={costBasis}
+            onAddPosition={(next) => {
+              setSavedNote(null);
+              setDraft(next);
+            }}
+          />
+        ) : null}
+        {savedNote ? (
+          <p className="text-sm text-[var(--open)]">
+            {savedNote}{" "}
+            <Link to="/positions" className="text-[var(--brass)]">
+              {t("positions.viewPositions")} →
+            </Link>
+          </p>
+        ) : null}
       </div>
+      {draft ? (
+        <PositionForm
+          title={t("positions.addTitle")}
+          initial={draft}
+          confirmOpened
+          onCancel={() => setDraft(null)}
+          onSave={(next) => {
+            addPosition(next);
+            setDraft(null);
+            setSavedNote(t("positions.saved"));
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -660,7 +700,19 @@ function structureLabel(structure: string | null, t: (key: MsgKey) => string): s
   return structure ?? "";
 }
 
-function VerdictCard({ desk, mode }: { desk: DeskOutput; mode: "put" | "call" }) {
+function VerdictCard({
+  desk,
+  mode,
+  shares,
+  costBasis,
+  onAddPosition,
+}: {
+  desk: DeskOutput;
+  mode: "put" | "call";
+  shares: number;
+  costBasis: number;
+  onAddPosition: (draft: PositionDraft) => void;
+}) {
   const { t } = useI18n();
   const disclaimer = mode === "call" ? t("desk.callDisclaimer") : t("desk.putDisclaimer");
   return (
@@ -670,32 +722,13 @@ function VerdictCard({ desk, mode }: { desk: DeskOutput; mode: "put" | "call" })
       </p>
       <div className="mt-4 flex flex-col gap-5">
         {desk.decisions.map((decision) => (
-          <div key={decision.ticker}>
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className="font-[family-name:var(--font-mono)] text-sm text-[var(--mute)]">
-                  {decision.ticker}
-                  {decision.structure ? ` · ${structureLabel(decision.structure, t)}` : ""}
-                  {decision.delta_bucket ? ` · ${decision.delta_bucket}` : ""}
-                </p>
-                {decision.contract_id ? (
-                  <p className="mt-1 break-all font-[family-name:var(--font-mono)] text-sm">
-                    {decision.contract_id}
-                  </p>
-                ) : null}
-                <p className="mt-2 text-sm leading-relaxed text-[var(--chalk)]">{decision.why}</p>
-                {decision.premium_tradeoff ? (
-                  <p className="mt-1 text-xs text-[var(--mute)]">{decision.premium_tradeoff}</p>
-                ) : null}
-              </div>
-              <span className={`stamp shrink-0 ${decision.action === "OPEN" ? "stamp-open" : "stamp-skip"}`}>
-                {decision.action}
-              </span>
-            </div>
-            {decision.action === "OPEN" && decision.payoff ? (
-              <PayoffChart ticker={decision.ticker} payoff={decision.payoff} />
-            ) : null}
-          </div>
+          <DecisionBlock
+            key={decision.ticker}
+            decision={decision}
+            shares={shares}
+            costBasis={costBasis}
+            onAddPosition={onAddPosition}
+          />
         ))}
       </div>
       {desk.portfolio_note ? (
@@ -705,5 +738,63 @@ function VerdictCard({ desk, mode }: { desk: DeskOutput; mode: "put" | "call" })
       ) : null}
       <p className="mt-3 text-xs text-[var(--mute)]">{disclaimer}</p>
     </section>
+  );
+}
+
+function DecisionBlock({
+  decision,
+  shares,
+  costBasis,
+  onAddPosition,
+}: {
+  decision: TickerDecision;
+  shares: number;
+  costBasis: number;
+  onAddPosition: (draft: PositionDraft) => void;
+}) {
+  const { t } = useI18n();
+  const draft =
+    decision.action === "OPEN"
+      ? draftFromOpenDecision({ decision, shares, costBasis })
+      : null;
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="font-[family-name:var(--font-mono)] text-sm text-[var(--mute)]">
+            {decision.ticker}
+            {decision.structure ? ` · ${structureLabel(decision.structure, t)}` : ""}
+            {decision.delta_bucket ? ` · ${decision.delta_bucket}` : ""}
+          </p>
+          {decision.contract_id ? (
+            <p className="mt-1 break-all font-[family-name:var(--font-mono)] text-sm">
+              {decision.contract_id}
+            </p>
+          ) : null}
+          <p className="mt-2 text-sm leading-relaxed text-[var(--chalk)]">{decision.why}</p>
+          {decision.premium_tradeoff ? (
+            <p className="mt-1 text-xs text-[var(--mute)]">{decision.premium_tradeoff}</p>
+          ) : null}
+        </div>
+        <span className={`stamp shrink-0 ${decision.action === "OPEN" ? "stamp-open" : "stamp-skip"}`}>
+          {decision.action}
+        </span>
+      </div>
+      {decision.action === "OPEN" && decision.payoff ? (
+        <PayoffChart ticker={decision.ticker} payoff={decision.payoff} />
+      ) : null}
+      {decision.action === "OPEN" && decision.structure === "BULL_PUT_SPREAD" ? (
+        <p className="mt-3 text-xs text-[var(--mute)]">{t("desk.structureUnsupported")}</p>
+      ) : null}
+      {draft ? (
+        <button
+          type="button"
+          className="mt-3 min-h-11 rounded-sm border border-[var(--brass)] px-4 text-sm text-[var(--brass)]"
+          onClick={() => onAddPosition(draft)}
+        >
+          {t("desk.addToPositions")}
+        </button>
+      ) : null}
+    </div>
   );
 }

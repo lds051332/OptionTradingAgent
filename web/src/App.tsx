@@ -3,6 +3,7 @@ import { fetchMe } from "./api";
 import { BrandSeal } from "./Brand";
 import { Desk } from "./Desk";
 import { Home } from "./Home";
+import { PositionsPage } from "./PositionsPage";
 import { PageFrame } from "./PageFrame";
 import { readStoredLang } from "./i18n";
 import { useI18n } from "./locale";
@@ -42,12 +43,13 @@ export function App() {
       "/": t("app.titleHome"),
       "/put": t("app.titlePut"),
       "/call": t("app.titleCall"),
+      "/positions": t("app.titlePositions"),
     } as const;
     document.title = titles[path as keyof typeof titles] ?? titles["/"];
   }, [path, t]);
 
   useEffect(() => {
-    if (path !== "/" && path !== "/put" && path !== "/call") {
+    if (path !== "/" && path !== "/put" && path !== "/call" && path !== "/positions") {
       navigate("/", { replace: true });
     }
   }, [path, navigate]);
@@ -83,6 +85,8 @@ export function App() {
   const page =
     path === "/put" || path === "/call" ? (
       <Desk key={`${path}-${lang}`} defaults={defaults} mode={path.slice(1) as "put" | "call"} />
+    ) : path === "/positions" ? (
+      <PositionsPage key={`positions-${lang}`} />
     ) : (
       <Home />
     );

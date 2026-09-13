@@ -4,6 +4,34 @@
 
 ---
 
+## 2026-09-13 · 可选持仓管理 V1
+
+### 背景
+
+开仓决策台已经能给出 OPEN/SKIP。缺的是「已经开了仓，现在该怎么办」。持仓必须是可选的：不录仓也能继续用 `/put` 和 `/call`。OPEN 不能自动变成持仓，因为建议不是成交。
+
+### 做了什么
+
+- 新增 `/positions`。仓位只存在浏览器 `option-desk:positions:v1`，不落库、不接券商
+- Home 第三张 Optional 卡；Desk OPEN 且结构为 CSP / Covered Call 时可预填「加入我的持仓」
+- `POST /api/positions/evaluate` 按到期日精确查用户那张合约（不走开仓 3–9 DTE 筛链），确定性规则给出 HOLD / CLOSE / ROLL
+- Profit Capture、止盈 75%、临期 2DTE/50%、指派风险滚仓；CLOSE 优先于 ROLL
+- `POST /api/positions/roll-candidates` 复用现有 3–9 DTE 筛链；用户确认实际成交后旧仓 ROLLED、新仓 OPEN
+- Bull Put Spread 仍只在 Entry Desk；`/api/runs` 语义未改
+
+刻意不做：数据库、登录、自动下单、多腿持仓、LLM 决定动作。
+
+### 文件
+
+| 路径 | 作用 |
+| --- | --- |
+| `web/src/positions/` | 本地仓位、导入导出、settings |
+| `web/src/PositionsPage.tsx` | 持仓页（Windows 下不能叫 Positions.tsx，会和目录撞名） |
+| `option_desk/positions/` | 估值、规则、滚仓候选 |
+| `tests/test_position_*.py` | 公式、规则、API |
+
+---
+
 ## 2026-09-12 · v0.5a 决策质量
 
 ### 背景

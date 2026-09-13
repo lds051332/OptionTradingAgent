@@ -1,5 +1,11 @@
 import type { Defaults, StreamEvent } from "./types";
 import { getLang, tx } from "./i18n";
+import type {
+  EvaluateResponse,
+  Position,
+  PositionSettings,
+  RollCandidatesResponse,
+} from "./positions/types";
 
 function langHeaders(extra?: Record<string, string>): Record<string, string> {
   const lang = getLang();
@@ -94,4 +100,60 @@ export async function* startRun(
   }
   const tail = flush();
   if (tail) yield tail;
+}
+
+export async function evaluatePositions(
+  positions: Position[],
+  settings: PositionSettings,
+  options?: { signal?: AbortSignal },
+): Promise<EvaluateResponse> {
+  const res = await fetch("/api/positions/evaluate", {
+    method: "POST",
+    credentials: "include",
+    headers: langHeaders({ "Content-Type": "application/json" }),
+    signal: options?.signal,
+    body: JSON.stringify({
+      settings: {
+        profitTarget: settings.profitTarget,
+        nearExpiryDte: settings.nearExpiryDte,
+        nearExpiryProfitTarget: settings.nearExpiryProfitTarget,
+      },
+      positions: positions.map((item) => ({
+        id: item.id,
+        ticker: item.ticker,
+        strategy: item.strategy,
+        optionType: item.optionType,
+        expiry: item.expiry,
+        strike: item.strike,
+        contracts: item.contracts,
+        entryPremium: item.entryPremium,
+        assignmentOk: item.assignmentOk,
+      })),
+    }),
+  });
+  return readJson<EvaluateResponse>(res);
+}
+
+export async function fetchRollCandidates(
+  position: Position,
+  estimatedClosePrice: number | null,
+  targetDelta?: number,
+  options?: { signal?: AbortSignal },
+): Promise<RollCandidatesResponse> {
+  const res = await fetch("/api/positions/roll-candidates", {
+    method: "POST",
+    credentials: "include",
+    headers: langHeaders({ "Content-Type": "application/json" }),
+    signal: options?.signal,
+    body: JSON.stringify({
+      ticker: position.ticker,
+      optionType: position.optionType,
+      expiry: position.expiry,
+      strike: position.strike,
+      contracts: position.contracts,
+      estimatedClosePrice,
+      targetDelta,
+    }),
+  });
+  return readJson<RollCandidatesResponse>(res);
 }

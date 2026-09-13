@@ -151,6 +151,20 @@ a:focus-visible {
     linear-gradient(180deg, color-mix(in srgb, var(--open) 8%, var(--card)) 0%, var(--card) 42%);
 }
 
+.home-gate-positions {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--brass) 5%, var(--card)) 0%, var(--card) 50%);
+  opacity: 0.96;
+}
+
+.stamp-hold {
+  color: var(--mute);
+}
+
+.stamp-roll {
+  color: var(--brass);
+}
+
 .page-frame {
   display: flex;
   flex-direction: column;
