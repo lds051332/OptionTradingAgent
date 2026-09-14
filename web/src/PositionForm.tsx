@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { TickerCombobox, normalizeSymbol } from "./TickerCombobox";
 import { useI18n } from "./locale";
 import type { Position, PositionDraft, PositionStrategy } from "./positions";
@@ -14,6 +14,23 @@ type Props = {
 function toDateInput(iso?: string): string {
   if (!iso) return new Date().toISOString().slice(0, 10);
   return iso.slice(0, 10);
+}
+
+function Field({
+  label,
+  children,
+  span = false,
+}: {
+  label: string;
+  children: ReactNode;
+  span?: boolean;
+}) {
+  return (
+    <label className={`fill-field${span ? " fill-field-span" : ""}`}>
+      <span>{label}</span>
+      {children}
+    </label>
+  );
 }
 
 export function PositionForm({ title, initial, confirmOpened = false, onCancel, onSave }: Props) {
@@ -40,6 +57,19 @@ export function PositionForm({ title, initial, confirmOpened = false, onCancel, 
       setCostBasis("");
     }
   }, [strategy]);
+
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onCancel();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onCancel]);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -77,123 +107,100 @@ export function PositionForm({ title, initial, confirmOpened = false, onCancel, 
     });
   }
 
-  const field = "mt-2 min-h-11 w-full rounded-sm border border-[var(--hairline)] bg-[var(--night)] px-3 font-[family-name:var(--font-mono)]";
-  const label = "text-xs tracking-wide text-[var(--mute)] uppercase";
-
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/55 p-3 sm:items-center">
-      <form
-        onSubmit={submit}
-        className="ticket max-h-[min(92dvh,44rem)] w-full max-w-lg overflow-y-auto px-5 py-5 pl-8"
-      >
-        <p className="font-[family-name:var(--font-mono)] text-[11px] tracking-[0.22em] text-[var(--brass)] uppercase">
-          {title}
-        </p>
-        {confirmOpened ? <p className="mt-2 text-sm text-[var(--mute)]">{t("positions.draftHint")}</p> : null}
+    <div className="fill-overlay">
+      <form onSubmit={submit} className="ticket fill-sheet" role="dialog" aria-modal="true" aria-labelledby="fill-sheet-title">
+        <header className="fill-sheet-head">
+          <p id="fill-sheet-title" className="font-[family-name:var(--font-mono)] text-[11px] tracking-[0.22em] text-[var(--brass)] uppercase">
+            {title}
+          </p>
+          {confirmOpened ? <p className="fill-sheet-hint">{t("positions.draftHint")}</p> : null}
+        </header>
 
-        <label className={`mt-4 block ${label}`}>{t("positions.strategy")}</label>
-        <div className="mt-2 grid grid-cols-2 gap-2">
-          {(["CSP", "COVERED_CALL"] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              className={`min-h-11 rounded-sm border px-3 text-sm ${
-                strategy === value
-                  ? "border-[var(--brass)] bg-[var(--brass)] text-[var(--night)]"
-                  : "border-[var(--hairline)] text-[var(--chalk)]"
-              }`}
-              onClick={() => setStrategy(value)}
-            >
-              {value === "CSP" ? t("positions.csp") : t("positions.coveredCall")}
-            </button>
-          ))}
-        </div>
-
-        <label className={`mt-4 block ${label}`} htmlFor="position-ticker">
-          {t("positions.ticker")}
-        </label>
-        <TickerCombobox id="position-ticker" value={ticker} onChange={setTicker} />
-
-        {strategy === "COVERED_CALL" ? (
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <label className="block">
-              <span className={label}>{t("positions.shares")}</span>
-              <input className={field} type="number" min={100} step={1} value={shares} onChange={(e) => setShares(e.target.value)} />
-            </label>
-            <label className="block">
-              <span className={label}>{t("positions.costBasis")}</span>
-              <input className={field} type="number" min={0.01} step={0.01} value={costBasis} onChange={(e) => setCostBasis(e.target.value)} />
-            </label>
+        <div className="fill-sheet-body">
+          <div className="fill-field fill-field-span">
+            <span>{t("positions.strategy")}</span>
+            <div className="fill-seg">
+              {(["CSP", "COVERED_CALL"] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={strategy === value ? "is-on" : ""}
+                  onClick={() => setStrategy(value)}
+                >
+                  {value === "CSP" ? t("positions.csp") : t("positions.coveredCall")}
+                </button>
+              ))}
+            </div>
           </div>
-        ) : null}
 
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <label className="block">
-            <span className={label}>{t("positions.expiry")}</span>
-            <input className={field} type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} required />
-          </label>
-          <label className="block">
-            <span className={label}>{t("positions.strike")}</span>
-            <input className={field} type="number" min={0.01} step={0.01} value={strike} onChange={(e) => setStrike(e.target.value)} />
-          </label>
+          <div className="fill-field fill-field-span">
+            <span>{t("positions.ticker")}</span>
+            <TickerCombobox id="position-ticker" value={ticker} onChange={setTicker} compact />
+          </div>
+
+          {strategy === "COVERED_CALL" ? (
+            <>
+              <Field label={t("positions.shares")}>
+                <input type="number" min={100} step={1} value={shares} onChange={(e) => setShares(e.target.value)} />
+              </Field>
+              <Field label={t("positions.costBasis")}>
+                <input type="number" min={0.01} step={0.01} value={costBasis} onChange={(e) => setCostBasis(e.target.value)} />
+              </Field>
+            </>
+          ) : null}
+
+          <Field label={t("positions.expiry")}>
+            <input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} required />
+          </Field>
+          <Field label={t("positions.strike")}>
+            <input type="number" min={0.01} step={0.01} value={strike} onChange={(e) => setStrike(e.target.value)} />
+          </Field>
+
+          <Field label={t("positions.contracts")}>
+            <input type="number" min={1} step={1} value={contracts} onChange={(e) => setContracts(e.target.value)} />
+          </Field>
+          <Field label={confirmOpened ? t("positions.actualEntryPremium") : t("positions.entryPremium")}>
+            <input type="number" min={0} step={0.01} value={entryPremium} onChange={(e) => setEntryPremium(e.target.value)} />
+          </Field>
+
+          <div className="fill-field fill-field-span">
+            <span>{t("positions.assignmentOk")}</span>
+            <div className="fill-seg">
+              <button type="button" className={assignmentOk ? "is-on" : ""} onClick={() => setAssignmentOk(true)}>
+                {t("positions.assignmentYes")}
+              </button>
+              <button type="button" className={!assignmentOk ? "is-on" : ""} onClick={() => setAssignmentOk(false)}>
+                {t("positions.assignmentNo")}
+              </button>
+            </div>
+          </div>
+
+          <Field label={t("positions.openedAt")}>
+            <input type="date" value={openedAt} onChange={(e) => setOpenedAt(e.target.value)} />
+          </Field>
+          <Field label={t("positions.note")}>
+            <input value={note} onChange={(e) => setNote(e.target.value)} />
+          </Field>
+
+          {error ? <p className="fill-sheet-error">{error}</p> : null}
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <label className="block">
-            <span className={label}>{t("positions.contracts")}</span>
-            <input className={field} type="number" min={1} step={1} value={contracts} onChange={(e) => setContracts(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className={label}>
-              {confirmOpened ? t("positions.actualEntryPremium") : t("positions.entryPremium")}
-            </span>
-            <input className={field} type="number" min={0} step={0.01} value={entryPremium} onChange={(e) => setEntryPremium(e.target.value)} />
-          </label>
-        </div>
-
-        <label className={`mt-4 block ${label}`}>{t("positions.assignmentOk")}</label>
-        <div className="mt-2 grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            className={`min-h-11 rounded-sm border px-3 text-sm ${assignmentOk ? "border-[var(--brass)] bg-[var(--brass)] text-[var(--night)]" : "border-[var(--hairline)]"}`}
-            onClick={() => setAssignmentOk(true)}
-          >
-            {t("positions.assignmentYes")}
-          </button>
-          <button
-            type="button"
-            className={`min-h-11 rounded-sm border px-3 text-sm ${!assignmentOk ? "border-[var(--brass)] bg-[var(--brass)] text-[var(--night)]" : "border-[var(--hairline)]"}`}
-            onClick={() => setAssignmentOk(false)}
-          >
-            {t("positions.assignmentNo")}
-          </button>
-        </div>
-
-        <label className={`mt-4 block ${label}`}>
-          {t("positions.openedAt")}
-          <input className={field} type="date" value={openedAt} onChange={(e) => setOpenedAt(e.target.value)} />
-        </label>
-        <label className={`mt-4 block ${label}`}>
-          {t("positions.note")}
-          <input className={field} value={note} onChange={(e) => setNote(e.target.value)} />
-        </label>
-
-        {confirmOpened ? (
-          <label className="mt-4 flex min-h-11 items-center gap-3 text-sm">
-            <input type="checkbox" checked={openedConfirm} onChange={(e) => setOpenedConfirm(e.target.checked)} />
-            {t("positions.iOpened")}
-          </label>
-        ) : null}
-
-        {error ? <p className="mt-3 text-sm text-[var(--skip)]">{error}</p> : null}
-
-        <div className="mt-5 flex gap-3">
-          <button type="button" className="min-h-11 flex-1 rounded-sm border border-[var(--hairline)] text-sm" onClick={onCancel}>
-            {t("positions.cancel")}
-          </button>
-          <button type="submit" className="min-h-11 flex-1 rounded-sm bg-[var(--brass)] font-semibold text-[var(--night)]">
-            {t("positions.save")}
-          </button>
+        <div className="fill-sheet-foot">
+          {confirmOpened ? (
+            <label className="fill-confirm">
+              <input type="checkbox" checked={openedConfirm} onChange={(e) => setOpenedConfirm(e.target.checked)} />
+              {t("positions.iOpened")}
+            </label>
+          ) : null}
+          <div className="fill-actions">
+            <button type="button" className="ghost" onClick={onCancel}>
+              {t("positions.cancel")}
+            </button>
+            <button type="submit" className="stamp-save">
+              {t("positions.save")}
+            </button>
+          </div>
         </div>
       </form>
     </div>

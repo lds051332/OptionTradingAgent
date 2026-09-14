@@ -48,11 +48,12 @@ type Props = {
   id?: string;
   value: string;
   onChange: (symbol: string) => void;
+  compact?: boolean;
 };
 
 type Row = Underlying & { rank: number; custom?: boolean };
 
-export function TickerCombobox({ id, value, onChange }: Props) {
+export function TickerCombobox({ id, value, onChange, compact = false }: Props) {
   const { lang, t } = useI18n();
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -162,7 +163,7 @@ export function TickerCombobox({ id, value, onChange }: Props) {
   const activeId = rows[active] ? `${listId}-${rows[active].symbol}` : undefined;
 
   return (
-    <div ref={rootRef} className="relative mt-2">
+    <div ref={rootRef} className={compact ? "fill-ticker" : "relative mt-2"}>
       <div
         className={`flex min-h-11 items-stretch rounded-sm border bg-[var(--night)] ${
           open ? "border-[var(--brass)]" : "border-[var(--hairline)]"
@@ -194,7 +195,7 @@ export function TickerCombobox({ id, value, onChange }: Props) {
             requestAnimationFrame(() => inputRef.current?.select());
           }}
           onKeyDown={onKeyDown}
-          className="min-h-11 min-w-0 flex-1 bg-transparent px-3 font-[family-name:var(--font-mono)] text-sm tracking-wide text-[var(--brass)] outline-none focus-visible:outline-none"
+          className={`min-h-11 min-w-0 flex-1 bg-transparent px-3 font-[family-name:var(--font-mono)] tracking-wide text-[var(--brass)] outline-none focus-visible:outline-none ${compact ? "text-base" : "text-sm"}`}
         />
         <button
           type="button"
