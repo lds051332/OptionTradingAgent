@@ -190,10 +190,98 @@ a:focus-visible {
 }
 
 .fill-field > span {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  min-width: 0;
   font-size: 10px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--mute);
+}
+
+.fill-tip {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.fill-tip-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: -15px -14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--brass);
+  cursor: help;
+}
+
+.fill-tip-glyph {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--brass) 75%, var(--hairline));
+  border-radius: 50%;
+  background: var(--night);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--brass) 18%, transparent);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1;
+}
+
+.fill-tip-card {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% - 6px);
+  z-index: 30;
+  width: min(17.5rem, calc(100vw - 2.5rem));
+  padding: 0.55rem 0.7rem 0.6rem;
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--brass);
+  border-radius: 2px;
+  background: var(--blotter);
+  color: var(--chalk);
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  line-height: 1.45;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.38);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0.14s ease;
+}
+
+.fill-field > span.has-tip {
+  cursor: help;
+}
+
+.fill-tip:hover .fill-tip-card,
+.fill-tip:focus-within .fill-tip-card,
+.fill-field > span.has-tip:hover .fill-tip-card,
+.fill-field > span.has-tip:focus-within .fill-tip-card {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fill-tip-card {
+    transition: none;
+  }
 }
 
 .fill-sheet .fill-field > input {
@@ -380,6 +468,51 @@ a:focus-visible {
 
 .stamp-roll {
   color: var(--brass);
+}
+
+.stamp-idle {
+  color: color-mix(in srgb, var(--brass) 68%, var(--mute));
+}
+
+.revalue-btn {
+  display: flex;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  border: 0;
+  border-radius: 2px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--brass) 88%, white) 0%, var(--brass) 100%);
+  color: var(--night);
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--brass) 50%, transparent),
+    0 10px 24px rgba(196, 163, 90, 0.22);
+}
+
+.revalue-btn:not(:disabled):hover {
+  filter: brightness(1.05);
+}
+
+.revalue-btn:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.revalue-btn:disabled {
+  opacity: 0.45;
+  box-shadow: none;
+}
+
+.revalue-btn-pending {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--brass) 70%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--brass) 18%, transparent),
+    0 12px 28px rgba(196, 163, 90, 0.28);
 }
 
 .page-frame {

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { TickerCombobox, normalizeSymbol } from "./TickerCombobox";
 import { useI18n } from "./locale";
 import type { Position, PositionDraft, PositionStrategy } from "./positions";
@@ -16,18 +16,45 @@ function toDateInput(iso?: string): string {
   return iso.slice(0, 10);
 }
 
+function FieldTip({ text }: { text: string }) {
+  const id = useId();
+  return (
+    <span className="fill-tip">
+      <button
+        type="button"
+        className="fill-tip-mark"
+        aria-describedby={id}
+        aria-label={text}
+        onClick={(event) => event.preventDefault()}
+      >
+        <span className="fill-tip-glyph" aria-hidden>
+          ?
+        </span>
+      </button>
+      <span id={id} className="fill-tip-card" role="tooltip">
+        {text}
+      </span>
+    </span>
+  );
+}
+
 function Field({
   label,
+  tip,
   children,
   span = false,
 }: {
   label: string;
+  tip?: string;
   children: ReactNode;
   span?: boolean;
 }) {
   return (
     <label className={`fill-field${span ? " fill-field-span" : ""}`}>
-      <span>{label}</span>
+      <span className={tip ? "has-tip" : undefined}>
+        {label}
+        {tip ? <FieldTip text={tip} /> : null}
+      </span>
       {children}
     </label>
   );
@@ -160,7 +187,10 @@ export function PositionForm({ title, initial, confirmOpened = false, onCancel, 
           <Field label={t("positions.contracts")}>
             <input type="number" min={1} step={1} value={contracts} onChange={(e) => setContracts(e.target.value)} />
           </Field>
-          <Field label={confirmOpened ? t("positions.actualEntryPremium") : t("positions.entryPremium")}>
+          <Field
+            label={confirmOpened ? t("positions.actualEntryPremium") : t("positions.entryPremium")}
+            tip={t("positions.entryPremiumTip")}
+          >
             <input type="number" min={0} step={0.01} value={entryPremium} onChange={(e) => setEntryPremium(e.target.value)} />
           </Field>
 

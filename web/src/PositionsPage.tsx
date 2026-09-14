@@ -27,8 +27,6 @@ import {
 } from "./positions";
 import { Link } from "./router";
 
-const REFRESH_MS = 120_000;
-
 function money(value: number): string {
   const abs = Math.abs(value).toLocaleString("en-US", { maximumFractionDigits: 0 });
   if (value > 0) return `+$${abs}`;
@@ -120,55 +118,41 @@ export function PositionsPage() {
   }, [opens, evaluations]);
   const history = useMemo(() => historyPositions(positions), [positions]);
 
-  const refreshQuotes = useCallback(
-    async (force = false) => {
-      if (opens.length === 0) {
-        setEvaluations({});
-        setFetchedAt(null);
-        setEvalError(null);
-        return;
-      }
-      const token = ++evalRef.current;
-      setEvalLoading(true);
-      if (!force) setEvalError(null);
-      try {
-        const result = await evaluatePositions(opens, settings);
-        if (token !== evalRef.current) return;
-        const next: Record<string, PositionEvaluation> = {};
-        for (const item of result.evaluations) next[item.positionId] = item;
-        setEvaluations(next);
-        setFetchedAt(result.fetchedAt);
-        setMarketOpen(result.marketOpen);
-        setEvalError(null);
-      } catch (err) {
-        if (token !== evalRef.current) return;
-        setEvalError(err instanceof Error ? err.message : t("positions.evaluateFailed"));
-      } finally {
-        if (token === evalRef.current) setEvalLoading(false);
-      }
-    },
-    [opens, settings, t],
-  );
+  const refreshQuotes = useCallback(async () => {
+    if (opens.length === 0) {
+      setEvaluations({});
+      setFetchedAt(null);
+      setEvalError(null);
+      return;
+    }
+    const token = ++evalRef.current;
+    setEvalLoading(true);
+    setEvalError(null);
+    try {
+      const result = await evaluatePositions(opens, settings);
+      if (token !== evalRef.current) return;
+      const next: Record<string, PositionEvaluation> = {};
+      for (const item of result.evaluations) next[item.positionId] = item;
+      setEvaluations(next);
+      setFetchedAt(result.fetchedAt);
+      setMarketOpen(result.marketOpen);
+      setEvalError(null);
+    } catch (err) {
+      if (token !== evalRef.current) return;
+      setEvalError(err instanceof Error ? err.message : t("positions.evaluateFailed"));
+    } finally {
+      if (token === evalRef.current) setEvalLoading(false);
+    }
+  }, [opens, settings, t]);
 
   useEffect(() => {
-    void refreshQuotes();
-  }, [refreshQuotes]);
-
-  useEffect(() => {
-    if (opens.length === 0) return;
-    const tick = () => {
-      if (document.visibilityState === "visible") void refreshQuotes(true);
-    };
-    const timer = window.setInterval(tick, REFRESH_MS);
-    const onVis = () => {
-      if (document.visibilityState === "visible") void refreshQuotes(true);
-    };
-    document.addEventListener("visibilitychange", onVis);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVis);
-    };
-  }, [opens.length, refreshQuotes]);
+    if (opens.length > 0) return;
+    evalRef.current += 1;
+    setEvaluations({});
+    setFetchedAt(null);
+    setEvalError(null);
+    setEvalLoading(false);
+  }, [opens.length]);
 
   const closeCount = opens.filter((item) => evaluations[item.id]?.management.action === "CLOSE").length;
   const rollCount = opens.filter((item) => evaluations[item.id]?.management.action === "ROLL").length;
@@ -177,12 +161,23 @@ export function PositionsPage() {
     return pnl == null ? sum : sum + pnl;
   }, 0);
 
+  function dropEvaluation(id: string) {
+    setEvaluations((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }
+
   function saveDraft(draft: PositionDraft) {
     if (form?.mode === "edit" && form.initial && "id" in form.initial) {
-      updatePosition(form.initial.id, {
+      const id = form.initial.id;
+      updatePosition(id, {
         ...draft,
         ticker: draft.ticker,
       });
+      dropEvaluation(id);
     } else {
       addPosition(draft);
     }
@@ -265,19 +260,41 @@ export function PositionsPage() {
             </p>
             <p className="mt-3 font-[family-name:var(--font-mono)] text-sm">
               {t("positions.estimatedOptionPnl")}{" "}
-              <span className={estimatedPnl >= 0 ? "text-[var(--open)]" : "text-[var(--skip)]"}>{money(estimatedPnl)}</span>
-              <span className="ml-2 text-xs text-[var(--mute)]">{t("positions.estimated")}</span>
+              {opens.some((item) => evaluations[item.id]?.markPnl != null) ? (
+                <>
+                  <span className={estimatedPnl >= 0 ? "text-[var(--open)]" : "text-[var(--skip)]"}>{money(estimatedPnl)}</span>
+                  <span className="ml-2 text-xs text-[var(--mute)]">{t("positions.estimated")}</span>
+                </>
+              ) : (
+                <span className="text-[var(--mute)]">—</span>
+              )}
             </p>
             {marketOpen === false ? <p className="mt-2 text-xs text-[var(--skip)]">{t("positions.marketClosed")}</p> : null}
             {fetchedAt ? (
               <p className="mt-1 font-[family-name:var(--font-mono)] text-[11px] text-[var(--mute)]">
                 {t("positions.fetchedAt", { when: formatWhen(fetchedAt, locale) })}
               </p>
-            ) : null}
-            {evalLoading ? <p className="mt-2 text-xs text-[var(--mute)]">{t("positions.loadingQuotes")}</p> : null}
+            ) : (
+              <p className="mt-2 text-sm text-[var(--chalk)]">{t("positions.refreshHint")}</p>
+            )}
             {evalError ? <p className="mt-2 text-sm text-[var(--skip)]">{evalError}</p> : null}
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button type="button" className="min-h-11 rounded-sm bg-[var(--brass)] px-3 text-sm font-semibold text-[var(--night)]" onClick={() => setForm({ mode: "add" })}>
+            <button
+              type="button"
+              className={`revalue-btn mt-4 ${opens.length > 0 && !fetchedAt && !evalLoading ? "revalue-btn-pending" : ""}`}
+              onClick={() => void refreshQuotes()}
+              disabled={opens.length === 0 || evalLoading}
+            >
+              {evalLoading ? (
+                <>
+                  <span className="pulse-dot" aria-hidden="true" />
+                  {t("positions.loadingQuotes")}
+                </>
+              ) : (
+                t("positions.refresh")
+              )}
+            </button>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" className="min-h-11 rounded-sm border border-[var(--hairline)] px-3 text-sm" onClick={() => setForm({ mode: "add" })}>
                 + {t("positions.add")}
               </button>
               <button type="button" className="min-h-11 rounded-sm border border-[var(--hairline)] px-3 text-sm" onClick={() => setImportOpen(true)}>
@@ -285,9 +302,6 @@ export function PositionsPage() {
               </button>
               <button type="button" className="min-h-11 rounded-sm border border-[var(--hairline)] px-3 text-sm" onClick={() => downloadPositionsJson(positions)}>
                 {t("positions.export")}
-              </button>
-              <button type="button" className="min-h-11 rounded-sm border border-[var(--hairline)] px-3 text-sm" onClick={() => void refreshQuotes(true)} disabled={opens.length === 0}>
-                {t("positions.refresh")}
               </button>
               <button type="button" className="min-h-11 rounded-sm border border-[var(--hairline)] px-3 text-sm" onClick={() => setSettingsOpen((open) => !open)}>
                 {t("positions.settings")}
@@ -299,6 +313,9 @@ export function PositionsPage() {
                 onSave={(next) => {
                   const saved = savePositionSettings(next);
                   setSettings(saved);
+                  setEvaluations({});
+                  setFetchedAt(null);
+                  setMarketOpen(null);
                   setNotice(t("positions.settingsSaved"));
                 }}
               />
@@ -316,6 +333,7 @@ export function PositionsPage() {
                 onDelete={() => {
                   if (window.confirm(t("positions.confirmDelete"))) {
                     deletePosition(position.id);
+                    dropEvaluation(position.id);
                     reload();
                   }
                 }}
@@ -360,6 +378,7 @@ export function PositionsPage() {
           onCancel={() => setClosing(null)}
           onConfirm={(closePrice, fees) => {
             closePosition(closing.id, { closePrice, fees });
+            dropEvaluation(closing.id);
             setClosing(null);
             reload();
           }}
@@ -373,6 +392,7 @@ export function PositionsPage() {
           onCancel={() => setRolling(null)}
           onConfirm={(payload) => {
             rollPosition(rolling.id, payload);
+            dropEvaluation(rolling.id);
             setRolling(null);
             reload();
           }}
@@ -391,6 +411,9 @@ export function PositionsPage() {
               const existing = storageError ? [] : loadPositions();
               applyImport(existing, incoming, importMode);
               setStorageError(false);
+              setEvaluations({});
+              setFetchedAt(null);
+              setMarketOpen(null);
               setImportOpen(false);
               setImportMessage(t("positions.importOk", { n: incoming.length }));
               reload();
@@ -431,11 +454,20 @@ function PositionCard({
 }) {
   const { t } = useI18n();
   const right = position.optionType === "CALL" ? "C" : "P";
+  const valued = evaluation != null;
   const action = evaluation?.management.action ?? null;
-  const stamp =
-    action === "CLOSE" ? "stamp-open" : action === "ROLL" ? "stamp-roll" : action === "HOLD" ? "stamp-hold" : "stamp-skip";
-  const stampText =
-    action === "CLOSE"
+  const stamp = !valued
+    ? "stamp-idle"
+    : action === "CLOSE"
+      ? "stamp-open"
+      : action === "ROLL"
+        ? "stamp-roll"
+        : action === "HOLD"
+          ? "stamp-hold"
+          : "stamp-skip";
+  const stampText = !valued
+    ? t("positions.notValued")
+    : action === "CLOSE"
       ? t("positions.closeCandidate")
       : action === "ROLL"
         ? t("positions.rollCandidate")
@@ -479,7 +511,9 @@ function PositionCard({
       {evaluation?.itm != null ? (
         <p className="mt-3 text-xs text-[var(--mute)]">{evaluation.itm ? t("positions.itm") : t("positions.otm")}</p>
       ) : null}
-      {evaluation && !evaluation.contract ? (
+      {!valued ? (
+        <p className="mt-3 text-sm text-[var(--mute)]">{t("positions.notValuedHint")}</p>
+      ) : evaluation && !evaluation.contract ? (
         <p className="mt-3 text-sm text-[var(--skip)]">{t("positions.managementUnavailable")}</p>
       ) : null}
       {reasons.length > 0 ? (
