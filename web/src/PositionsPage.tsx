@@ -222,27 +222,33 @@ export function PositionsPage() {
           </p>
           <h1 className="mt-3 font-[family-name:var(--font-display)] text-2xl">{t("positions.empty")}</h1>
           <p className="mt-3 text-sm leading-relaxed text-[var(--mute)]">{t("positions.emptyHint")}</p>
-          <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-            <Link to="/put" className="inline-flex min-h-11 items-center justify-center rounded-sm bg-[var(--brass)] px-4 font-semibold text-[var(--night)]">
-              {t("positions.analyzePut")}
-            </Link>
-            <Link to="/call" className="inline-flex min-h-11 items-center justify-center rounded-sm border border-[var(--hairline)] px-4">
-              {t("positions.analyzeCall")}
-            </Link>
+          <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             <button
               type="button"
-              className="min-h-11 rounded-sm border border-[var(--hairline)] px-4"
+              className="inline-flex min-h-11 items-center justify-center rounded-sm bg-[var(--brass)] px-4 font-semibold text-[var(--night)]"
               onClick={() => setForm({ mode: "add" })}
             >
               + {t("positions.add")}
             </button>
             <button
               type="button"
-              className="min-h-11 rounded-sm border border-[var(--hairline)] px-4"
+              className="inline-flex min-h-11 items-center justify-center rounded-sm border border-[var(--hairline)] px-4"
               onClick={() => setImportOpen(true)}
             >
               {t("positions.import")}
             </button>
+            <Link
+              to="/put"
+              className="inline-flex min-h-11 items-center justify-center rounded-sm border border-[var(--hairline)] px-4"
+            >
+              {t("positions.analyzePut")}
+            </Link>
+            <Link
+              to="/call"
+              className="inline-flex min-h-11 items-center justify-center rounded-sm border border-[var(--hairline)] px-4"
+            >
+              {t("positions.analyzeCall")}
+            </Link>
           </div>
         </section>
       ) : (
