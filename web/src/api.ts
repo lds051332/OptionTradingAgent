@@ -36,25 +36,20 @@ export async function fetchMe(): Promise<Defaults> {
   return readJson<Defaults>(res);
 }
 
-export async function* startRun(
-  body: {
-    tickers: string[];
-    delta: number;
-    cash?: number;
-    mode?: "put" | "call";
-    shares?: number;
-    cost_basis?: number;
-    language?: string;
-  },
-  options?: { signal?: AbortSignal },
-): AsyncGenerator<StreamEvent> {
-  const res = await fetch("/api/runs", {
-    method: "POST",
-    credentials: "include",
-    headers: langHeaders({ "Content-Type": "application/json", Accept: "text/event-stream" }),
-    body: JSON.stringify({ ...body, language: body.language ?? getLang() }),
-    signal: options?.signal,
-  });
+export type DemoSummary = {
+  id: string;
+  kicker: string;
+  title: string;
+  summary: string;
+};
+
+export async function fetchDemos(): Promise<DemoSummary[]> {
+  const res = await fetch("/api/demos", { credentials: "include", headers: langHeaders() });
+  const body = await readJson<{ scenarios: DemoSummary[] }>(res);
+  return body.scenarios;
+}
+
+async function* readEventStream(res: Response): AsyncGenerator<StreamEvent> {
   if (!res.ok) {
     await readJson(res);
     return;
@@ -100,6 +95,41 @@ export async function* startRun(
   }
   const tail = flush();
   if (tail) yield tail;
+}
+
+export async function* startReplay(
+  scenario: string,
+  options?: { signal?: AbortSignal },
+): AsyncGenerator<StreamEvent> {
+  const res = await fetch(`/api/demos/${encodeURIComponent(scenario)}`, {
+    method: "POST",
+    credentials: "include",
+    headers: langHeaders({ Accept: "text/event-stream" }),
+    signal: options?.signal,
+  });
+  yield* readEventStream(res);
+}
+
+export async function* startRun(
+  body: {
+    tickers: string[];
+    delta: number;
+    cash?: number;
+    mode?: "put" | "call";
+    shares?: number;
+    cost_basis?: number;
+    language?: string;
+  },
+  options?: { signal?: AbortSignal },
+): AsyncGenerator<StreamEvent> {
+  const res = await fetch("/api/runs", {
+    method: "POST",
+    credentials: "include",
+    headers: langHeaders({ "Content-Type": "application/json", Accept: "text/event-stream" }),
+    body: JSON.stringify({ ...body, language: body.language ?? getLang() }),
+    signal: options?.signal,
+  });
+  yield* readEventStream(res);
 }
 
 export async function evaluatePositions(

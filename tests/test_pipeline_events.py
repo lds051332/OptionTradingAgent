@@ -1,6 +1,7 @@
 from datetime import date, datetime, timezone
 
-from option_desk.agents.desk import heuristic_desk
+from option_desk.agents.desk import DeskTrace, heuristic_desk
+from option_desk.agents.structured import ModelCall
 from option_desk.config import Settings
 from option_desk.events.search import SearchHit
 from option_desk.pipeline import iter_desk, run_desk
@@ -70,11 +71,18 @@ def _patch_pipeline(monkeypatch, snap: TickerSnapshot, events: list[ScoutedEvent
     )
     monkeypatch.setattr(
         "option_desk.pipeline.classify_scout_hits",
-        lambda *a, **k: (events, []),
+        lambda *a, **k: (events, [], None),
     )
     monkeypatch.setattr("option_desk.pipeline.make_llm", lambda *a, **k: None)
     desk = heuristic_desk([snap], events, 55000, "zh")
-    monkeypatch.setattr("option_desk.pipeline.run_desk_llm", lambda *a, **k: desk)
+    monkeypatch.setattr(
+        "option_desk.pipeline.trace_desk",
+        lambda *a, **k: DeskTrace(
+            output=desk,
+            proposal=desk,
+            call=ModelCall(method="heuristic", elapsed_ms=0),
+        ),
+    )
     monkeypatch.setattr("option_desk.pipeline.fetch_market_regime", lambda *_a, **_k: None)
 
 
@@ -186,11 +194,11 @@ def test_empty_buckets_skip_calendar_scout_and_skip(monkeypatch):
         raise AssertionError("classify_scout_hits should not run without candidates")
 
     def boom_llm(*_a, **_k):
-        raise AssertionError("run_desk_llm should not run without candidates")
+        raise AssertionError("trace_desk should not run without candidates")
 
     monkeypatch.setattr("option_desk.pipeline.search_web", boom_search)
     monkeypatch.setattr("option_desk.pipeline.classify_scout_hits", boom_classify)
-    monkeypatch.setattr("option_desk.pipeline.run_desk_llm", boom_llm)
+    monkeypatch.setattr("option_desk.pipeline.trace_desk", boom_llm)
 
     settings = Settings(tickers="NVDA", cash=55000, output_language="zh", desk_mode="put")
     types = [

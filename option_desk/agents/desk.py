@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import time
+from dataclasses import dataclass
+
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from option_desk.agents.structured import invoke_structured
+from option_desk.agents.structured import ModelCall, StructuredOutputError, invoke_structured_traced
 from option_desk.config import Settings
 from option_desk.i18n import language_instruction, localize_hard_reason, normalize_lang
 from option_desk.payoff import attach_payoffs
@@ -822,23 +825,29 @@ def _finalize_desk(
     return attach_payoffs(enforce_desk_rules(output, snapshots, cash, lang, mode=mode), snapshots)
 
 
-def run_desk_llm(
+@dataclass
+class DeskTrace:
+    output: DeskOutput
+    proposal: DeskOutput
+    call: ModelCall
+
+
+def trace_desk(
     snapshots: list[TickerSnapshot],
     events: list[ScoutedEvent],
     cash: float,
     settings: Settings,
     llm,
     market: MarketRegime | None = None,
-) -> DeskOutput:
+) -> DeskTrace:
     mode = str(getattr(settings, "desk_mode", "put")).lower()
     lang = settings.output_language
     if llm is None:
-        return _finalize_desk(
-            heuristic_desk(snapshots, events, cash, lang, mode=mode, market=market),
-            snapshots,
-            cash,
-            lang,
-            mode=mode,
+        proposal = heuristic_desk(snapshots, events, cash, lang, mode=mode, market=market)
+        return DeskTrace(
+            output=_finalize_desk(proposal, snapshots, cash, lang, mode=mode),
+            proposal=proposal,
+            call=ModelCall(method="heuristic", elapsed_ms=0),
         )
     system = CALL_SYSTEM if mode == "call" else SYSTEM
     prompt = snapshot_prompt(
@@ -850,27 +859,53 @@ def run_desk_llm(
         cost_basis=float(getattr(settings, "cost_basis", 0) or 0),
         market=market,
     )
+    messages = [
+        SystemMessage(content=system + language_instruction(lang)),
+        HumanMessage(content=prompt),
+    ]
+    started = time.perf_counter()
     try:
-        parsed = invoke_structured(
+        parsed, call = invoke_structured_traced(
             llm,
             DeskLLMResult,
-            [
-                SystemMessage(content=system + language_instruction(lang)),
-                HumanMessage(content=prompt),
-            ],
+            messages,
             provider=settings.llm_endpoint().provider,
         )
-        raw = DeskOutput(
-            decisions=[TickerDecision.model_validate(d.model_dump()) for d in parsed.decisions],
+        proposal = DeskOutput(
+            decisions=[TickerDecision.model_validate(item.model_dump()) for item in parsed.decisions],
             portfolio_note=parsed.portfolio_note,
             used_llm=True,
         )
     except Exception as exc:
-        fallback = heuristic_desk(snapshots, events, cash, lang, mode=mode, market=market)
-        fallback.portfolio_note = _L(
+        proposal = heuristic_desk(snapshots, events, cash, lang, mode=mode, market=market)
+        failed = exc.call if isinstance(exc, StructuredOutputError) else None
+        proposal.portfolio_note = _L(
             lang,
             f"LLM desk failed ({exc}); used heuristic.",
             f"LLM 终审失败（{exc}）；改用启发式。",
         )
-        return _finalize_desk(fallback, snapshots, cash, lang, mode=mode)
-    return _finalize_desk(raw, snapshots, cash, lang, mode=mode)
+        call = ModelCall(
+            method="heuristic",
+            elapsed_ms=failed.elapsed_ms if failed else _elapsed_ms(started),
+            error=str(exc),
+        )
+    return DeskTrace(
+        output=_finalize_desk(proposal, snapshots, cash, lang, mode=mode),
+        proposal=proposal,
+        call=call,
+    )
+
+
+def _elapsed_ms(started: float) -> int:
+    return max(0, int(round((time.perf_counter() - started) * 1000)))
+
+
+def run_desk_llm(
+    snapshots: list[TickerSnapshot],
+    events: list[ScoutedEvent],
+    cash: float,
+    settings: Settings,
+    llm,
+    market: MarketRegime | None = None,
+) -> DeskOutput:
+    return trace_desk(snapshots, events, cash, settings, llm, market=market).output

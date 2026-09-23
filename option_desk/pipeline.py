@@ -3,8 +3,9 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import date, datetime, timezone
 
-from option_desk.agents.desk import no_candidate_desk, run_desk_llm
+from option_desk.agents.desk import no_candidate_desk, trace_desk
 from option_desk.agents.llm import make_llm
+from option_desk.agents.structured import ModelCall
 from option_desk.calendar.gates import evaluate_calendar
 from option_desk.chain.market import fetch_market_regime
 from option_desk.chain.screener import screen_ticker, uses_last_print
@@ -13,6 +14,7 @@ from option_desk.events.scout import classify_scout_hits, scout_queries
 from option_desk.events.search import search_web
 from option_desk.i18n import localize_hard_reason, normalize_lang, t
 from option_desk.schemas import DeskMode, DeskRun, TickerSnapshot
+from option_desk.rewrite import decision_changes
 from option_desk.stream import StreamEvent, stream_event
 
 
@@ -31,6 +33,12 @@ def _attach_calendar(snapshot: TickerSnapshot, settings: Settings) -> TickerSnap
 
 def _dump(model) -> dict:
     return model.model_dump(mode="json")
+
+
+def _call_payload(call: ModelCall | None) -> dict | None:
+    if call is None:
+        return None
+    return call.model_dump(mode="json")
 
 
 def _screen_error_message(ticker: str, exc: BaseException, lang: str) -> str:
@@ -195,6 +203,8 @@ def iter_desk(
                 "desk_done",
                 message=t(lang, "pipe_desk_skip_all"),
                 desk=_dump(desk),
+                changes=[],
+                call=_call_payload(ModelCall(method="heuristic", elapsed_ms=0)),
             )
         else:
             yield stream_event("scout_search_started", message=t(lang, "pipe_scout_search"))
@@ -211,21 +221,28 @@ def iter_desk(
                 )
 
             yield stream_event("scout_llm_started", message=t(lang, "pipe_scout_llm"))
-            events, scout_warnings = classify_scout_hits(scout_names, as_of, settings, llm, hits)
+            events, scout_warnings, scout_call = classify_scout_hits(
+                scout_names, as_of, settings, llm, hits
+            )
             warnings.extend(scout_warnings)
             yield stream_event(
                 "scout_done",
                 message=t(lang, "pipe_scout_done", n=len(events)) if events else t(lang, "pipe_scout_done_empty"),
                 events=[_dump(e) for e in events],
                 warnings=scout_warnings,
+                call=_call_payload(scout_call),
             )
 
             yield stream_event("desk_started", message=t(lang, "pipe_desk_started"))
-            desk = run_desk_llm(snapshots, events, settings.cash, settings, llm, market=market)
+            traced = trace_desk(snapshots, events, settings.cash, settings, llm, market=market)
+            desk = traced.output
             yield stream_event(
                 "desk_done",
                 message=t(lang, "pipe_desk_done"),
                 desk=_dump(desk),
+                proposal=_dump(traced.proposal),
+                changes=decision_changes(traced.proposal, desk),
+                call=_call_payload(traced.call),
             )
 
         fetched_at = snapshots[0].fetched_at if snapshots else datetime.now(timezone.utc)

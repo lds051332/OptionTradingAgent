@@ -29,6 +29,7 @@ from option_desk.config import (
 from option_desk.geoip import suggested_language
 from option_desk.i18n import lang_from_headers, normalize_lang, t
 from option_desk.pipeline import iter_desk
+from option_desk.replay import iter_replay, list_scenarios, scenario_ids
 from option_desk.positions.evaluate import (
     PositionInput,
     RuleSettings,
@@ -89,6 +90,10 @@ class RollBody(BaseModel):
     contracts: int = Field(ge=1)
     estimated_close_price: float | None = Field(default=None, alias="estimatedClosePrice")
     target_delta: float | None = Field(default=None, alias="targetDelta")
+
+
+def _unknown_demo(lang: str) -> str:
+    return "没有这条回放" if lang == "zh" else "No such replay"
 
 
 def _lang(request: Request, explicit: str | None = None) -> str:
@@ -300,6 +305,33 @@ def create_app() -> FastAPI:
         payload = _defaults(settings)
         payload["suggested_language"] = suggested_language(request)
         return payload
+
+    @app.get("/api/demos")
+    def demos(request: Request) -> dict:
+        return {"scenarios": list_scenarios(_lang(request))}
+
+    @app.post("/api/demos/{scenario}")
+    async def play_demo(scenario: str, request: Request) -> StreamingResponse:
+        lang = _lang(request)
+        if scenario not in scenario_ids():
+            raise HTTPException(
+                status_code=404,
+                detail=_unknown_demo(lang),
+            )
+
+        async def stream() -> AsyncIterator[bytes]:
+            for event in iter_replay(scenario, lang):
+                yield event.to_sse().encode("utf-8")
+
+        return StreamingResponse(
+            stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @app.post("/api/runs")
     async def create_run(body: RunBody, request: Request) -> StreamingResponse:

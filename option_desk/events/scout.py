@@ -4,7 +4,7 @@ from datetime import date
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from option_desk.agents.structured import invoke_structured
+from option_desk.agents.structured import ModelCall, invoke_structured_traced
 from option_desk.config import Settings, missing_llm_key_hint
 from option_desk.events.search import SearchHit, search_web
 from option_desk.i18n import language_instruction, t
@@ -84,14 +84,14 @@ def classify_scout_hits(
     settings: Settings,
     llm,
     hits: list[SearchHit],
-) -> tuple[list[ScoutedEvent], list[str]]:
+) -> tuple[list[ScoutedEvent], list[str], ModelCall | None]:
     warnings: list[str] = []
     if not hits:
         warnings.append(t(settings.output_language, "search_empty"))
-        return [], warnings
+        return [], warnings, None
     if llm is None:
         warnings.append(missing_llm_key_hint() + t(settings.output_language, "skipped_classify"))
-        return [], warnings
+        return [], warnings, ModelCall(method="heuristic", elapsed_ms=0)
 
     digest = "\n".join(
         f"- [{h.query}] {h.title} | {h.snippet} | {h.url}" for h in hits[:24]
@@ -103,7 +103,7 @@ def classify_scout_hits(
         f"Search hits:\n{digest}"
     )
     try:
-        parsed = invoke_structured(
+        parsed, call = invoke_structured_traced(
             llm,
             EventList,
             [
@@ -114,9 +114,11 @@ def classify_scout_hits(
         )
     except Exception as exc:
         warnings.append(t(settings.output_language, "scout_failed").format(exc=exc))
-        return [], warnings
+        failed = getattr(exc, "call", None)
+        call = failed if isinstance(failed, ModelCall) else ModelCall(method="failed", elapsed_ms=0, error=str(exc))
+        return [], warnings, call
     events = [_normalize(event, tickers) for event in parsed.events]
-    return events, warnings
+    return events, warnings, call
 
 
 def scout_events(
@@ -128,5 +130,5 @@ def scout_events(
     hits: list[SearchHit] = []
     for query in scout_queries(tickers, as_of):
         hits.extend(search_web(query, settings.tavily_api_key, limit=4))
-    events, warnings = classify_scout_hits(tickers, as_of, settings, llm, hits)
+    events, warnings, _call = classify_scout_hits(tickers, as_of, settings, llm, hits)
     return events, hits, warnings

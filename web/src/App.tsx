@@ -4,6 +4,7 @@ import { BrandSeal } from "./Brand";
 import { Desk } from "./Desk";
 import { Home } from "./Home";
 import { PositionsPage } from "./PositionsPage";
+import { ReplayIndex, ReplayPlayer } from "./Replay";
 import { PageFrame } from "./PageFrame";
 import { readStoredLang } from "./i18n";
 import { useI18n } from "./locale";
@@ -44,14 +45,21 @@ export function App() {
       "/put": t("app.titlePut"),
       "/call": t("app.titleCall"),
       "/positions": t("app.titlePositions"),
+      "/replay": t("app.titleReplay"),
     } as const;
-    document.title = titles[path as keyof typeof titles] ?? titles["/"];
+    document.title =
+      path.startsWith("/replay") ? t("app.titleReplay") : (titles[path as keyof typeof titles] ?? titles["/"]);
   }, [path, t]);
 
   useEffect(() => {
-    if (path !== "/" && path !== "/put" && path !== "/call" && path !== "/positions") {
-      navigate("/", { replace: true });
-    }
+    const known =
+      path === "/" ||
+      path === "/put" ||
+      path === "/call" ||
+      path === "/positions" ||
+      path === "/replay" ||
+      path.startsWith("/replay/");
+    if (!known) navigate("/", { replace: true });
   }, [path, navigate]);
 
   if (!ready) {
@@ -82,11 +90,16 @@ export function App() {
     );
   }
 
+  const replayScenario = path.startsWith("/replay/") ? path.slice("/replay/".length) : "";
   const page =
     path === "/put" || path === "/call" ? (
       <Desk key={`${path}-${lang}`} defaults={defaults} mode={path.slice(1) as "put" | "call"} />
     ) : path === "/positions" ? (
       <PositionsPage key={`positions-${lang}`} />
+    ) : path === "/replay" ? (
+      <ReplayIndex key={`replay-${lang}`} />
+    ) : replayScenario ? (
+      <ReplayPlayer key={`${path}-${lang}`} scenario={replayScenario} />
     ) : (
       <Home />
     );

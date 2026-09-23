@@ -1443,6 +1443,50 @@ a:focus-visible {
   }
 }
 
+.replay-split {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.replay-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+
+.replay-slip {
+  border: 1px dashed var(--hairline);
+  background: color-mix(in srgb, var(--night) 62%, transparent);
+  padding: 0.9rem 0.85rem 1rem;
+}
+
+.replay-slip.is-skip {
+  background: color-mix(in srgb, var(--skip) 8%, var(--night));
+}
+
+.replay-slip.is-ruled {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--brass) 72%, var(--hairline));
+}
+
+@media (min-width: 640px) {
+  .replay-split {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .replay-arrow {
+    writing-mode: vertical-rl;
+    padding: 0 0.15rem;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pulse-dot,
   .work-reel-track::after,

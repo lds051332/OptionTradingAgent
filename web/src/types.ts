@@ -204,6 +204,23 @@ export type DeskRun = {
   market?: MarketRegime | null;
 };
 
+export type ModelCall = {
+  method: string;
+  elapsed_ms: number;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  token_source: "usage" | "estimate" | null;
+  error: string | null;
+};
+
+export type DecisionChange = {
+  ticker: string;
+  field: "action" | "structure" | "delta_bucket" | "contract_id";
+  before: string;
+  after: string;
+  changed: boolean;
+};
+
 export type StepStatus = "running" | "done" | "error";
 
 export type TimelineStep = {
@@ -215,8 +232,11 @@ export type TimelineStep = {
   snapshot?: TickerSnapshot;
   calendar?: CalendarGate;
   hits?: SearchHit[];
+  queries?: string[];
   events?: ScoutedEvent[];
   desk?: DeskOutput;
   warnings?: string[];
   market?: MarketRegime;
+  call?: ModelCall;
+  changes?: DecisionChange[];
 };

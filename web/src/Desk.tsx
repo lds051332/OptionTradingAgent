@@ -13,7 +13,9 @@ import type {
   CalendarGate,
   Defaults,
   DeskOutput,
+  DecisionChange,
   MarketRegime,
+  ModelCall,
   ScoutedEvent,
   SearchHit,
   StreamEvent,
@@ -46,7 +48,25 @@ function upsert(steps: TimelineStep[], next: TimelineStep): TimelineStep[] {
   return copy;
 }
 
-function applyEvent(steps: TimelineStep[], event: StreamEvent): TimelineStep[] {
+function nextQueries(steps: TimelineStep[], event: StreamEvent): string[] {
+  const prev = steps.find((step) => step.id === "scout")?.queries ?? [];
+  const query = event.data.query;
+  if (typeof query !== "string" || !query || prev.includes(query)) return prev;
+  return [...prev, query];
+}
+
+function asCall(value: unknown): ModelCall | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const call = value as ModelCall;
+  return typeof call.method === "string" ? call : undefined;
+}
+
+function asChanges(value: unknown): DecisionChange[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value as DecisionChange[];
+}
+
+export function applyEvent(steps: TimelineStep[], event: StreamEvent): TimelineStep[] {
   const ticker = event.ticker ?? undefined;
   switch (event.type) {
     case "regime_started":
@@ -113,6 +133,7 @@ function applyEvent(steps: TimelineStep[], event: StreamEvent): TimelineStep[] {
         status: "running",
         message: event.message,
         hits: [],
+        queries: [],
       });
     case "scout_hits":
       return upsert(steps, {
@@ -121,6 +142,7 @@ function applyEvent(steps: TimelineStep[], event: StreamEvent): TimelineStep[] {
         status: "running",
         message: event.message,
         hits: event.data.hits as SearchHit[],
+        queries: nextQueries(steps, event),
       });
     case "scout_llm_started":
       return upsert(steps, {
@@ -129,6 +151,7 @@ function applyEvent(steps: TimelineStep[], event: StreamEvent): TimelineStep[] {
         status: "running",
         message: event.message,
         hits: steps.find((s) => s.id === "scout")?.hits,
+        queries: nextQueries(steps, event),
       });
     case "scout_done":
       return upsert(steps, {
@@ -137,8 +160,10 @@ function applyEvent(steps: TimelineStep[], event: StreamEvent): TimelineStep[] {
         status: "done",
         message: event.message,
         hits: steps.find((s) => s.id === "scout")?.hits,
+        queries: nextQueries(steps, event),
         events: event.data.events as ScoutedEvent[],
         warnings: event.data.warnings as string[],
+        call: asCall(event.data.call),
       });
     case "desk_started":
       return upsert(steps, {
@@ -154,6 +179,8 @@ function applyEvent(steps: TimelineStep[], event: StreamEvent): TimelineStep[] {
         status: "done",
         message: event.message,
         desk: event.data.desk as DeskOutput,
+        call: asCall(event.data.call),
+        changes: asChanges(event.data.changes),
       });
     case "run_error":
       return upsert(steps, {
@@ -492,7 +519,7 @@ function WorkingReel({ label }: { label: string }) {
   );
 }
 
-function StepCard({ step, mode }: { step: TimelineStep; mode: "put" | "call" }) {
+export function StepCard({ step, mode }: { step: TimelineStep; mode: "put" | "call" }) {
   const { t } = useI18n();
   const live = step.status === "running";
   return (
@@ -507,11 +534,14 @@ function StepCard({ step, mode }: { step: TimelineStep; mode: "put" | "call" }) 
         ) : null}
       </header>
       {live ? <WorkingReel label={step.message} /> : <p className="text-sm text-[var(--mute)]">{step.message}</p>}
+      {!live && step.call ? <CallLine call={step.call} /> : null}
       {step.type === "regime" && !live ? <RegimeBlock market={step.market} /> : null}
       {step.snapshot ? <Buckets snapshot={step.snapshot} mode={mode} /> : null}
       {!live && step.calendar ? <CalendarBlock calendar={step.calendar} /> : null}
+      {step.queries?.length ? <QueryList queries={step.queries} /> : null}
       {step.hits && step.hits.length > 0 ? <Hits hits={step.hits} /> : null}
       {!live && step.events ? <Events events={step.events} /> : null}
+      {!live && step.changes ? <RewriteNote changes={step.changes} /> : null}
       {step.warnings?.length ? (
         <ul className="mt-2 list-disc pl-4 text-xs text-[var(--skip)]">
           {step.warnings.map((warning) => (
@@ -653,6 +683,98 @@ function CalendarBlock({ calendar }: { calendar: CalendarGate }) {
       ) : (
         <p className="mt-1 text-[var(--mute)]">{t("desk.noCalendar")}</p>
       )}
+    </div>
+  );
+}
+
+function QueryList({ queries }: { queries: string[] }) {
+  const { t } = useI18n();
+  return (
+    <div className="mt-3">
+      <p className="font-[family-name:var(--font-mono)] text-[11px] tracking-[0.16em] text-[var(--mute)] uppercase">
+        {t("desk.queries")}
+      </p>
+      <ul className="mt-1 space-y-1">
+        {queries.map((query) => (
+          <li key={query} className="font-[family-name:var(--font-mono)] text-xs text-[var(--brass)]">
+            {query}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function tokenText(call: ModelCall, t: (key: MsgKey, vars?: Record<string, string | number>) => string): string {
+  if (call.input_tokens == null && call.output_tokens == null) return "";
+  const n =
+    call.input_tokens != null && call.output_tokens != null
+      ? `${call.input_tokens}+${call.output_tokens}`
+      : String(call.input_tokens ?? call.output_tokens);
+  return call.token_source === "estimate" ? t("desk.callEstimate", { n }) : t("desk.callUsage", { n });
+}
+
+function CallLine({ call }: { call: ModelCall }) {
+  const { t } = useI18n();
+  const tokens = call.method === "heuristic" ? "" : tokenText(call, t);
+  const line =
+    call.method === "heuristic"
+      ? t("desk.callHeuristic")
+      : tokens
+        ? t("desk.callMeta", { method: call.method, ms: call.elapsed_ms, tokens })
+        : t("desk.callMetaBare", { method: call.method, ms: call.elapsed_ms });
+  return (
+    <div className="mt-2">
+      <p className="font-[family-name:var(--font-mono)] text-xs text-[var(--brass)]">{line}</p>
+      {call.error ? (
+        <p
+          className={`mt-1 line-clamp-2 text-xs ${
+            call.method === "failed" ? "text-[var(--skip)]" : "text-[var(--mute)]"
+          }`}
+        >
+          {call.method === "failed" ? call.error : t("desk.callEarlier", { detail: call.error })}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+const CHANGE_FIELD: Record<DecisionChange["field"], MsgKey> = {
+  action: "replay.fieldAction",
+  structure: "replay.fieldStructure",
+  delta_bucket: "replay.fieldBucket",
+  contract_id: "replay.fieldContract",
+};
+
+function RewriteNote({ changes }: { changes: DecisionChange[] }) {
+  const { t } = useI18n();
+  const changed = changes.filter((row) => row.changed);
+  const several = new Set(changed.map((row) => row.ticker)).size > 1;
+  if (changed.length === 0) {
+    return (
+      <p className="mt-3 font-[family-name:var(--font-mono)] text-xs text-[var(--mute)]">{t("desk.rewriteNone")}</p>
+    );
+  }
+  return (
+    <div className="mt-3">
+      <p className="font-[family-name:var(--font-mono)] text-[11px] tracking-[0.16em] text-[var(--brass)] uppercase">
+        {t("desk.rewriteKicker")}
+      </p>
+      <ul className="mt-2 space-y-2">
+        {changed.map((row) => (
+          <li key={`${row.ticker}-${row.field}`} className="font-[family-name:var(--font-mono)] text-sm">
+            <span className="text-[var(--mute)]">
+              {several ? `${row.ticker} ` : ""}
+              {t(CHANGE_FIELD[row.field])}
+            </span>
+            <span className="mt-1 block break-all">
+              <span className="text-[var(--skip)] line-through">{row.before || t("replay.empty")}</span>
+              <span className="mx-2 text-[var(--mute)]">→</span>
+              <span className="text-[var(--chalk)]">{row.after || t("replay.empty")}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

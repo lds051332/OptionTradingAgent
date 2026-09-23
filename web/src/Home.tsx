@@ -42,6 +42,11 @@ export function Home() {
           to="/positions"
         />
       </div>
+
+      <Link to="/replay" className="mt-8 block text-sm leading-relaxed text-[var(--mute)]">
+        <span className="text-[var(--brass)]">{t("home.replayAction")}</span>
+        <span> — {t("home.replayBody")}</span>
+      </Link>
     </div>
   );
 }
