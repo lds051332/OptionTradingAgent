@@ -1,0 +1,26 @@
+# /etc/systemd/system/option-desk-finch.service
+# Finch runtime beside option-desk.service: same checkout and venv, its own process and limits.
+[Unit]
+Description=Option Desk Finch runtime (option.xdashan.top/finch)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/apps/OptionTradingAgent
+EnvironmentFile=/home/ubuntu/apps/OptionTradingAgent/.env
+EnvironmentFile=/home/ubuntu/apps/OptionTradingAgent/.env.finch
+ExecStart=/home/ubuntu/apps/OptionTradingAgent/.venv/bin/python -m option_desk.finch
+Restart=always
+RestartSec=5
+# Exit 2 means .env.finch is missing or invalid; do not restart-loop on it.
+RestartPreventExitStatus=2
+Nice=10
+MemoryMax=600M
+CPUQuota=80%
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -19,6 +19,7 @@ htmlcov/
 .env
 .env.*
 !.env.example
+!.env.finch.example
 
 # IDE / editor
 .idea/
@@ -49,3 +50,6 @@ agent-transcripts/
 # Personal QR codes stay local; keep the folder so Docker COPY does not fail
 qrcode/*
 !qrcode/.gitkeep
+
+# Finch partner docs and samples (local reference only; not option_desk/finch/)
+/finch/
