@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import AsyncIterator, Literal
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -39,6 +39,7 @@ from option_desk.positions.market import is_us_equity_rth
 from option_desk.positions.roll import collect_roll_candidates
 from option_desk.schemas import ContractQuote
 from option_desk.stream import StreamEvent
+from option_desk.web import seo
 
 TICKER_RE = re.compile(r"^[A-Za-z][A-Za-z.]{0,9}$")
 
@@ -441,6 +442,18 @@ def create_app() -> FastAPI:
             "marketOpen": market_open,
         }
 
+    @app.get("/robots.txt")
+    def robots(request: Request) -> PlainTextResponse:
+        return PlainTextResponse(seo.robots_txt(request), headers={"Cache-Control": HTML_CACHE_CONTROL})
+
+    @app.get("/sitemap.xml")
+    def sitemap(request: Request) -> Response:
+        return Response(
+            seo.sitemap_xml(request),
+            media_type="application/xml",
+            headers={"Cache-Control": HTML_CACHE_CONTROL},
+        )
+
     dist = _dist_dir()
     assets = dist / "assets"
     if assets.is_dir():
@@ -449,16 +462,18 @@ def create_app() -> FastAPI:
     if dist.is_dir():
 
         @app.get("/{path:path}")
-        def spa(path: str) -> FileResponse:
+        def spa(path: str, request: Request) -> Response:
             target = (dist / path).resolve()
             if dist.resolve() not in (target, *target.parents):
                 raise HTTPException(status_code=404)
-            if target.is_file():
+            if target.is_file() and target.name != "index.html":
                 return FileResponse(target, headers={"Cache-Control": HTML_CACHE_CONTROL})
-            return FileResponse(
-                dist / "index.html",
-                headers={"Cache-Control": HTML_CACHE_CONTROL},
+            shell, status = seo.render_shell(
+                (dist / "index.html").read_text(encoding="utf-8"),
+                "" if target.name == "index.html" else path,
+                request,
             )
+            return HTMLResponse(shell, status_code=status, headers={"Cache-Control": HTML_CACHE_CONTROL})
 
     return app
 

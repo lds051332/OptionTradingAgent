@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
-import { detectLang, setActiveLang, t as translate, type Lang, type MsgKey } from "./i18n";
+import { detectLang, setActiveLang, t as translate, urlLang, type Lang, type MsgKey } from "./i18n";
 
 type LocaleCtx = {
   lang: Lang;
@@ -22,6 +22,11 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
       setLang: (next, options) => {
         setActiveLang(next, options);
         setLangState(next);
+        if (urlLang() && urlLang() !== next) {
+          const url = new URL(window.location.href);
+          url.searchParams.set("lang", next);
+          window.history.replaceState(window.history.state, "", url);
+        }
       },
       t: (key, vars) => translate(lang, key, vars),
     };

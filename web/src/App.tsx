@@ -6,7 +6,7 @@ import { Home } from "./Home";
 import { PositionsPage } from "./PositionsPage";
 import { ReplayIndex, ReplayPlayer } from "./Replay";
 import { PageFrame } from "./PageFrame";
-import { readStoredLang } from "./i18n";
+import { readStoredLang, urlLang } from "./i18n";
 import { useI18n } from "./locale";
 import { useRouter } from "./router";
 import type { Defaults } from "./types";
@@ -23,7 +23,7 @@ export function App() {
     try {
       const me = await fetchMe();
       const suggested = me.suggested_language;
-      if (!readStoredLang() && (suggested === "zh" || suggested === "en")) {
+      if (!urlLang() && !readStoredLang() && (suggested === "zh" || suggested === "en")) {
         setLang(suggested, { persist: false });
       }
       setDefaults(me);

@@ -33,7 +33,7 @@ const zh = {
     replayBody: "不拉行情，也不调用模型。用事先录好的模型提案，演示现行规则如何处理三种情况：触发硬性风控、模型编造了不存在的合约、需要主动降低风险。",
   },
   app: {
-    titleHome: "摩根大山 · Option Desk",
+    titleHome: "摩根大山 · 美股期权轮式策略决策台",
     titlePut: "卖 Put 决策台 · 摩根大山",
     titleCall: "卖 Call 决策台 · 摩根大山",
     titlePositions: "我的持仓 · 摩根大山",
@@ -370,7 +370,7 @@ const en: NestedStrings<typeof zh> = {
     replayBody: "No live quotes, no model calls. Recorded model proposals show how the current rules handle a hard risk limit, a made-up contract, and a call to cut risk.",
   },
   app: {
-    titleHome: "摩根大山 · Option Desk",
+    titleHome: "摩根大山 · Wheel Strategy Desk for US Options",
     titlePut: "Put desk · 摩根大山",
     titleCall: "Call desk · 摩根大山",
     titlePositions: "My positions · 摩根大山",
@@ -756,8 +756,15 @@ export function browserLang(): Lang {
   return nav.startsWith("zh") ? "zh" : nav ? "en" : "zh";
 }
 
+/** `?lang=zh|en` gives each language its own crawlable URL (see option_desk/web/seo.py). */
+export function urlLang(): Lang | null {
+  if (typeof window === "undefined") return null;
+  const value = new URLSearchParams(window.location.search).get("lang");
+  return value === "zh" || value === "en" ? value : null;
+}
+
 export function detectLang(): Lang {
-  return readStoredLang() ?? browserLang();
+  return urlLang() ?? readStoredLang() ?? browserLang();
 }
 
 export function getLang(): Lang {
