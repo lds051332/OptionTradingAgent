@@ -103,7 +103,7 @@ def iter_replay(scenario: str, lang: str = "en") -> Iterator[StreamEvent]:
         delta=0.20,
         cash=_CASH,
         as_of=_AS_OF.isoformat(),
-        llm_label=_L(lang, "replay (recorded proposal)", "回放（录制提案）"),
+        llm_label=_L(lang, "replay (recorded proposal)", "回放（录制的提案）"),
         language=lang,
         mode=DeskMode.PUT.value,
         scenario=case.scenario,
@@ -113,7 +113,7 @@ def iter_replay(scenario: str, lang: str = "en") -> Iterator[StreamEvent]:
     )
     yield stream_event(
         "regime_started",
-        message=_L(lang, "Replaying the recorded market regime…", "回放录好的市场体制…"),
+        message=_L(lang, "Replaying recorded market regime data…", "回放录制的市场环境数据…"),
     )
     yield stream_event(
         "regime_done",
@@ -126,7 +126,7 @@ def iter_replay(scenario: str, lang: str = "en") -> Iterator[StreamEvent]:
         message=_L(
             lang,
             f"Replaying a recorded {snap.ticker} put chain…",
-            f"回放录好的 {snap.ticker} put 链…",
+            f"回放录制的 {snap.ticker} Put 期权链…",
         ),
     )
     yield stream_event(
@@ -145,7 +145,7 @@ def iter_replay(scenario: str, lang: str = "en") -> Iterator[StreamEvent]:
     yield stream_event(
         "calendar_started",
         ticker=snap.ticker,
-        message=_L(lang, "Replaying the recorded holding-window calendar…", "回放录好的持有窗口日历…"),
+        message=_L(lang, "Replaying the recorded holding-period calendar…", "回放录制的持有期事件日历…"),
     )
     cal = snap.calendar
     if cal.hard_skip:
@@ -161,7 +161,7 @@ def iter_replay(scenario: str, lang: str = "en") -> Iterator[StreamEvent]:
     )
     yield stream_event(
         "scout_search_started",
-        message=_L(lang, "Replaying recorded search hits…", "回放录好的搜索结果…"),
+        message=_L(lang, "Replaying recorded search results…", "回放录制的搜索结果…"),
     )
     yield stream_event(
         "scout_hits",
@@ -172,8 +172,8 @@ def iter_replay(scenario: str, lang: str = "en") -> Iterator[StreamEvent]:
         "scout_llm_started",
         message=_L(
             lang,
-            "Recorded hits have no dated catalyst, so they stay ignore.",
-            "录制结果没有带日期的催化剂，按规则记为 ignore。",
+            "The recorded news has no dated catalyst, so the rules ignore it.",
+            "录制的新闻里没有带明确日期的事件，按规则忽略。",
         ),
     )
     yield stream_event(
@@ -186,8 +186,8 @@ def iter_replay(scenario: str, lang: str = "en") -> Iterator[StreamEvent]:
         "desk_started",
         message=_L(
             lang,
-            "Sending the recorded proposal through the live rules…",
-            "把录好的模型提案送进现行规则…",
+            "Running the recorded proposal through the current rules…",
+            "用现行规则审核录制的模型提案…",
         ),
     )
     yield stream_event(
@@ -205,7 +205,7 @@ def iter_replay(scenario: str, lang: str = "en") -> Iterator[StreamEvent]:
         events=case.events,
         desk=case.stamped,
         warnings=[],
-        llm_label=_L(lang, "replay (recorded proposal)", "回放（录制提案）"),
+        llm_label=_L(lang, "replay (recorded proposal)", "回放（录制的提案）"),
         language=lang,
         mode=DeskMode.PUT,
         market=case.market,
@@ -227,7 +227,7 @@ def _hard_gate(lang: str) -> ReplayCase:
         why=_L(
             lang,
             "Earnings are this week, but the premium is rich enough. Open the standard put.",
-            "本周有财报，但权利金够厚。开标准档 put。",
+            "本周有财报，但权利金够高，开标准档 Put。",
         ),
     )
     stamped = _enforce(proposal, snap, lang)
@@ -243,7 +243,7 @@ def _invented(lang: str) -> ReplayCase:
         why=_L(
             lang,
             "Open the 999 strike. It is safer than either listed bucket.",
-            "开 999 行权价。它比列出的两档都更安全。",
+            "开 999 行权价，比列出的两个档位都安全。",
         ),
     )
     stamped = _enforce(proposal, snap, lang)
@@ -256,8 +256,8 @@ def _invented(lang: str) -> ReplayCase:
         stamped,
         _L(
             lang,
-            "The enforcer rejected the open: that contract_id is not in either delta bucket.",
-            "强制器拒绝开仓：这个 contract_id 不在任一档位里。",
+            "The rules rejected the open: that contract isn't in either delta bucket.",
+            "规则拒绝开仓：这个合约不在任何一个候选档位里。",
         ),
     )
 
@@ -269,7 +269,7 @@ def _reduce(lang: str) -> ReplayCase:
         lang,
         contract_id=_STANDARD_ID,
         bucket=DeltaBucket.STANDARD,
-        why=_L(lang, "Open the standard 0.20 delta put.", "开标准档 0.20Δ put。"),
+        why=_L(lang, "Open the standard 0.20 delta put.", "开标准档 0.20 Delta 的 Put。"),
     )
     heuristic = heuristic_desk([snap], _events(lang), _CASH, lang, market=market)
     stamped = attach_payoffs(enforce_desk_rules(heuristic, [snap], _CASH, lang), [snap])
@@ -283,8 +283,9 @@ def _reduce(lang: str) -> ReplayCase:
         stamped,
         _L(
             lang,
-            "Risk-off and cheap IV moved the open from standard to conservative. The standard contract itself was legal.",
-            "市场处于 risk-off，且 IV 相对近期波动偏便宜，开仓从标准档改到保守档。标准档合约本身是合法的。",
+            "Risk-off conditions and cheap IV moved the open from the standard bucket to the conservative one. "
+            "The standard contract itself was valid.",
+            "市场处于 Risk-Off，IV 相对近期实际波动又偏便宜，所以开仓从标准档降到保守档。标准档合约本身没有问题。",
         ),
     )
 
@@ -334,7 +335,7 @@ def _proposal(lang: str, *, contract_id: str, bucket: DeltaBucket, why: str) -> 
                 why=why,
             )
         ],
-        portfolio_note=_L(lang, "Recorded model proposal, before rules.", "录制的模型提案，规则尚未执行。"),
+        portfolio_note=_L(lang, "Recorded model proposal, before the rules are applied.", "录制的模型提案，尚未经过规则审核。"),
         used_llm=True,
     )
 
@@ -409,7 +410,7 @@ def _snapshot(
         ),
         mode=DeskMode.PUT,
         iv_context=iv,
-        notes=[_L(lang, "Recorded chain. No live quote was requested.", "录制的期权链。没有请求实时行情。")],
+        notes=[_L(lang, "Recorded chain; no live quotes were requested.", "录制的期权链，没有请求实时行情。")],
     )
 
 
@@ -471,7 +472,11 @@ def _quiet_market(lang: str) -> MarketRegime:
         spy=560.0,
         spy_sma20=555.0,
         spy_sma50=548.0,
-        why=_L(lang, "VIX in the mid-teens and SPY above both averages.", "VIX 在十几，SPY 在两条均线上方。"),
+        why=_L(
+            lang,
+            "VIX around 16 and SPY above its 20- and 50-day averages.",
+            "VIX 在 16 左右，SPY 站在 20 日和 50 日均线上方。",
+        ),
     )
 
 
@@ -484,7 +489,7 @@ def _risk_off(lang: str) -> MarketRegime:
         spy=520.0,
         spy_sma20=540.0,
         spy_sma50=555.0,
-        why=_L(lang, "VIX above 30 and SPY under the 50-day average.", "VIX 高于 30，且 SPY 在 50 日均线下方。"),
+        why=_L(lang, "VIX above 30 and SPY below its 50-day average.", "VIX 高于 30，SPY 跌破 50 日均线。"),
     )
 
 
@@ -494,7 +499,7 @@ def _events(lang: str) -> list[ScoutedEvent]:
             title=_L(
                 lang,
                 "Recorded headlines have no dated catalyst",
-                "录制的标题里没有带日期的催化剂",
+                "录制的新闻里没有带明确日期的事件",
             ),
             expected_time=None,
             tickers=[_TICKER],
@@ -504,8 +509,8 @@ def _events(lang: str) -> list[ScoutedEvent]:
             sources=["https://example.com/option-desk-replay"],
             detail=_L(
                 lang,
-                "Replay fixture. Persistent narrative with no date.",
-                "回放样本。没有日期的长期叙事。",
+                "Replay sample: a long-running story with no specific date.",
+                "回放样例：一个没有具体日期的长期话题。",
             ),
         )
     ]
@@ -514,12 +519,12 @@ def _events(lang: str) -> list[ScoutedEvent]:
 def _hits(lang: str) -> list[SearchHit]:
     return [
         SearchHit(
-            title=_L(lang, "Recorded headline (no live search)", "录制标题（没有实时搜索）"),
+            title=_L(lang, "Recorded headline (no live search)", "录制的新闻标题（未实时搜索）"),
             url="https://example.com/option-desk-replay",
             snippet=_L(
                 lang,
-                "Fixture hit for the replay. Nothing here is a dated catalyst.",
-                "回放用的固定命中。这里没有带日期的催化剂。",
+                "Fixed search result for the replay. Nothing here has a specific date.",
+                "回放用的固定搜索结果，里面没有带明确日期的事件。",
             ),
             query=f"{_TICKER} unexpected news this week",
         )
@@ -538,32 +543,32 @@ def _localize_calendar(snap: TickerSnapshot, lang: str) -> TickerSnapshot:
 def _hard_rule(lang: str) -> str:
     return _L(
         lang,
-        "Earnings fall inside the holding window, so the hard gate rewrote OPEN to SKIP.",
-        "财报落在持有窗口内，硬门控把 OPEN 改成了 SKIP。",
+        "Earnings fall inside the holding period, so the hard risk rule changed OPEN to SKIP.",
+        "持有期内有财报，硬性风控把开仓（OPEN）改成了跳过（SKIP）。",
     )
 
 
 def _replay_note(lang: str) -> str:
     return _L(
         lang,
-        "Stamped by the live rule code. No market data request and no model call.",
-        "由现行规则代码盖章。没有请求行情，也没有调用模型。",
+        "Produced by the current rule code. No market data requested, no model called.",
+        "结果由现行规则代码生成，没有请求行情，也没有调用模型。",
     )
 
 
 def _kicker(scenario: str) -> str:
     return {
-        "hard-gate": "Hard gate",
-        "invented-contract": "Invented contract",
-        "reduce-risk": "Reduce risk",
+        "hard-gate": "Hard risk rule",
+        "invented-contract": "Made-up contract",
+        "reduce-risk": "Cutting risk",
     }[scenario]
 
 
 def _title(scenario: str, lang: str) -> str:
     titles = {
-        "hard-gate": _L(lang, "Hard gate", "硬门控"),
-        "invented-contract": _L(lang, "Invented contract", "伪造合约"),
-        "reduce-risk": _L(lang, "Reduce risk", "降风险"),
+        "hard-gate": _L(lang, "Hard risk rule", "硬性风控"),
+        "invented-contract": _L(lang, "Made-up contract", "编造的合约"),
+        "reduce-risk": _L(lang, "Cutting risk", "主动降风险"),
     }
     return titles[scenario]
 
@@ -572,18 +577,18 @@ def _summary(scenario: str, lang: str) -> str:
     summaries = {
         "hard-gate": _L(
             lang,
-            "Earnings sit in the holding window. The recorded model still says OPEN. The gate leaves SKIP.",
-            "持有期内有财报。录好的模型仍要开仓。门控盖章仍是 SKIP。",
+            "Earnings land in the holding period. The recorded model still wants to open; the rules turn it into a SKIP.",
+            "持有期内有财报，录制的模型仍然建议开仓，规则直接改成跳过。",
         ),
         "invented-contract": _L(
             lang,
-            "The recorded model names a strike that is not on the chain. The enforcer refuses the open.",
-            "录好的模型写了一个链上没有的行权价。强制器拒绝开仓。",
+            "The recorded model picks a strike that doesn't exist on the chain. The rules refuse to open it.",
+            "录制的模型选了一个期权链上根本不存在的行权价，规则拒绝开仓。",
         ),
         "reduce-risk": _L(
             lang,
-            "Both buckets are real. Risk-off and cheap IV move the open from standard to conservative.",
-            "两档都是真合约。risk-off 和偏便宜的 IV 把开仓从标准档改到保守档。",
+            "Both buckets hold real contracts, but risk-off conditions and cheap IV push the open down from standard to conservative.",
+            "两个档位的合约都是真的，但市场 Risk-Off、IV 又偏便宜，规则把开仓从标准档降到保守档。",
         ),
     }
     return summaries[scenario]

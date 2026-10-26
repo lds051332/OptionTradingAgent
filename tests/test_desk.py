@@ -107,7 +107,7 @@ def test_invented_contract_id_rejected():
     )
     out = enforce_desk_rules(raw, [snap], cash=55000)
     assert out.decisions[0].action == DeskAction.SKIP
-    assert "not in the delta buckets" in out.decisions[0].why
+    assert "isn't in either delta bucket" in out.decisions[0].why
 
 
 def test_heuristic_opens_standard_when_quiet():
@@ -127,7 +127,7 @@ def test_heuristic_mentions_last_print():
     )
     out = heuristic_desk([snap], events=[], cash=55000, lang="zh")
     assert out.decisions[0].action == DeskAction.OPEN
-    assert "非盘口" in out.decisions[0].why
+    assert "不是实时报价" in out.decisions[0].why
 
 
 def test_no_candidate_desk_skips_without_llm():
@@ -136,7 +136,7 @@ def test_no_candidate_desk_skips_without_llm():
     out = no_candidate_desk([snap], lang="zh", mode="put")
     assert out.used_llm is False
     assert out.decisions[0].action == DeskAction.SKIP
-    assert "已跳过日历与事件侦察" in out.decisions[0].why
+    assert "已跳过日历和新闻检查" in out.decisions[0].why
     assert "No liquid puts" in out.decisions[0].why
 
 
@@ -318,5 +318,5 @@ def test_heuristic_prefers_conservative_when_iv_low():
     )
     out = heuristic_desk([snap], events=[], cash=55000, lang="zh")
     assert out.decisions[0].delta_bucket == DeltaBucket.CONSERVATIVE
-    assert "IV 体制 low" in out.decisions[0].why
+    assert "IV 水平 low" in out.decisions[0].why
 

@@ -217,7 +217,7 @@ def test_empty_buckets_skip_calendar_scout_and_skip(monkeypatch):
     run = run_desk(["NVDA"], as_of=date(2026, 9, 2), settings=settings)
     assert run.desk.used_llm is False
     assert run.desk.decisions[0].action == DeskAction.SKIP
-    assert "已跳过日历与事件侦察" in run.desk.decisions[0].why
+    assert "已跳过日历和新闻检查" in run.desk.decisions[0].why
     assert "无候选档位" in run.desk.portfolio_note
 
 

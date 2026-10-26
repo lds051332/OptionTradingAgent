@@ -199,15 +199,15 @@ def _quality_why(snapshot: TickerSnapshot, market: MarketRegime | None, lang: st
             _L(
                 lang,
                 f"IV regime {ctx.regime.value} (IV {_pct(ctx.atm_iv)} vs HV20 {_pct(ctx.hv_20)}).",
-                f"IV 体制 {ctx.regime.value}（IV {_pct(ctx.atm_iv)} vs HV20 {_pct(ctx.hv_20)}）。",
+                f"IV 水平 {ctx.regime.value}（IV {_pct(ctx.atm_iv)} vs HV20 {_pct(ctx.hv_20)}）。",
             )
         )
     if market is not None:
         bits.append(
             _L(
                 lang,
-                f"Market {market.label.value}.",
-                f"市场体制 {market.label.value}。",
+                f"Market regime {market.label.value}.",
+                f"市场环境 {market.label.value}。",
             )
         )
     return " ".join(bits)
@@ -218,14 +218,18 @@ def _inside_em_why(bucket, lang: str) -> str:
         return ""
     return _L(
         lang,
-        " Short strike sits inside the 1-sigma expected move.",
-        " 短腿行权价仍在 1σ 预期波动内。",
+        " The short strike is still inside the 1σ expected move.",
+        " 卖出的行权价仍在 1σ 预期波动区间内。",
     )
 
 
 def _hard_why(reasons: list[str], lang: str) -> str:
     if not reasons:
-        return _L(lang, "Hard calendar gate.", "硬日历门控。")
+        return _L(
+            lang,
+            "A must-avoid event falls in the holding period.",
+            "持有期内有必须回避的事件。",
+        )
     return "; ".join(localize_hard_reason(r, lang) for r in reasons)
 
 
@@ -286,8 +290,8 @@ def _last_print_why(cand, lang: str) -> str:
         return ""
     return _L(
         lang,
-        " Premium is last trade, not NBBO — confirm live quotes before sending an order.",
-        " 权利金为最新成交价而非盘口，下单前必须核实现价与买卖盘。",
+        " The premium is the last trade, not a live quote — check the live bid/ask before placing an order.",
+        " 权利金按最新成交价计算，不是实时报价，下单前务必核对实时买卖价。",
     )
 
 
@@ -307,12 +311,14 @@ def no_candidate_desk(
     for snap in snapshots:
         why = _L(
             lang,
-            "No liquid call in either delta bucket." if call else "No liquid put in either delta bucket.",
-            "两档都没有流动性足够的 call。" if call else "两档都没有流动性足够的 put。",
+            "Neither delta bucket has a call with enough liquidity."
+            if call
+            else "Neither delta bucket has a put with enough liquidity.",
+            "两个档位都没有流动性足够的 Call。" if call else "两个档位都没有流动性足够的 Put。",
         )
         if snap.notes:
             why = f"{why} {' '.join(snap.notes)}"
-        why = f"{why}{_L(lang, ' Skipped calendar and event scout.', ' 已跳过日历与事件侦察。')}"
+        why = f"{why}{_L(lang, ' Skipped the calendar and news checks.', ' 已跳过日历和新闻检查。')}"
         decisions.append(
             TickerDecision(ticker=snap.ticker, action=DeskAction.SKIP, why=why)
         )
@@ -320,8 +326,8 @@ def no_candidate_desk(
         decisions=decisions,
         portfolio_note=_L(
             lang,
-            "No candidates; skipped calendar, scout, and model desk.",
-            "无候选档位，已跳过日历、侦察与模型终审。",
+            "No candidate buckets; skipped the calendar check, news check, and model decision.",
+            "无候选档位，已跳过日历检查、新闻检查和模型决策。",
         ),
         used_llm=False,
     )
@@ -355,7 +361,7 @@ def heuristic_call_desk(
                 TickerDecision(
                     ticker=snap.ticker,
                     action=DeskAction.SKIP,
-                    why=_L(lang, f"Scout skip: {skip_event.title}", f"侦察建议跳过：{skip_event.title}"),
+                    why=_L(lang, f"Skipped because of news: {skip_event.title}", f"新闻提示应回避：{skip_event.title}"),
                 )
             )
             continue
@@ -379,7 +385,11 @@ def heuristic_call_desk(
                 TickerDecision(
                     ticker=snap.ticker,
                     action=DeskAction.SKIP,
-                    why=_L(lang, "No liquid call in either delta bucket.", "两档都没有流动性足够的 call。"),
+                    why=_L(
+                        lang,
+                        "Neither delta bucket has a call with enough liquidity.",
+                        "两个档位都没有流动性足够的 Call。",
+                    ),
                 )
             )
             continue
@@ -390,19 +400,20 @@ def heuristic_call_desk(
                     action=DeskAction.SKIP,
                     why=_L(
                         lang,
-                        "Not enough shares for one covered-call contract (need 100).",
-                        "持股不足 100 股，无法卖一张 covered call。",
+                        "Not enough shares for one covered call (need 100).",
+                        "持股不足 100 股，卖不了一张备兑 Call。",
                     ),
                 )
             )
             continue
         assignment_ok = _call_net_exit(bucket) >= basis if basis else True
-        why = _L(lang, "Default standard covered call.", "默认开标准档 covered call。")
+        why = _L(lang, "Default: standard covered call.", "默认开标准档备兑 Call。")
         if want_cons:
             why = _L(
                 lang,
-                "Soft macro, reduce event, quality/regime, or strike below cost basis → conservative (further OTM).",
-                "有软宏观、降风险事件、质量/体制信号，或标准档行权价低于成本，改用保守档（更虚值）。",
+                "Moved to the conservative (further OTM) bucket because of a macro event, "
+                "risk-reducing news, IV or market signals, or a standard strike below cost basis.",
+                "因为有宏观事件、需降风险的新闻、IV 或市场环境信号，或标准档行权价低于成本价，改用更虚值的保守档。",
             )
         extra = _quality_why(snap, market, lang)
         if extra:
@@ -411,8 +422,8 @@ def heuristic_call_desk(
         if not assignment_ok:
             why = _L(
                 lang,
-                f"{why} Called away would realize a loss vs cost basis.",
-                f"{why} 若被指派，相对成本价会锁定亏损。",
+                f"{why} If called away, you'd lock in a loss versus your cost basis.",
+                f"{why} 如果被指派，按行权价卖出会低于成本价，锁定亏损。",
             )
         why = f"{why}{_last_print_why(bucket, lang)}"
         decisions.append(
@@ -429,7 +440,7 @@ def heuristic_call_desk(
         )
     return DeskOutput(
         decisions=decisions,
-        portfolio_note=_L(lang, "Heuristic desk (no LLM).", "启发式终审（未调用 LLM）。"),
+        portfolio_note=_L(lang, "Rule-based decision (no model call).", "启发式规则决策（未调用模型）。"),
         used_llm=False,
     )
 
@@ -468,7 +479,7 @@ def heuristic_desk(
                 TickerDecision(
                     ticker=snap.ticker,
                     action=DeskAction.SKIP,
-                    why=_L(lang, f"Scout skip: {skip_event.title}", f"侦察建议跳过：{skip_event.title}"),
+                    why=_L(lang, f"Skipped because of news: {skip_event.title}", f"新闻提示应回避：{skip_event.title}"),
                 )
             )
             continue
@@ -490,7 +501,11 @@ def heuristic_desk(
                 TickerDecision(
                     ticker=snap.ticker,
                     action=DeskAction.SKIP,
-                    why=_L(lang, "No liquid put in either delta bucket.", "两档都没有流动性足够的 put。"),
+                    why=_L(
+                        lang,
+                        "Neither delta bucket has a put with enough liquidity.",
+                        "两个档位都没有流动性足够的 Put。",
+                    ),
                 )
             )
             continue
@@ -505,8 +520,8 @@ def heuristic_desk(
                         action=DeskAction.SKIP,
                         why=_L(
                             lang,
-                            "spread_only but no protective long put.",
-                            "要求只做价差，但没有可用的保护性多头 put。",
+                            "Spread required, but no protective long put is available.",
+                            "要求只做价差，但找不到可用的保护腿 Put。",
                         ),
                     )
                 )
@@ -519,19 +534,20 @@ def heuristic_desk(
                         action=DeskAction.SKIP,
                         why=_L(
                             lang,
-                            "CSP assignment cash exceeds remaining buying power.",
-                            "CSP 被指派所需现金超过剩余本金。",
+                            "Cash needed if this CSP is assigned exceeds the remaining cash.",
+                            "这笔 CSP 被指派所需的现金超过了剩余本金。",
                         ),
                     )
                 )
                 continue
             remaining -= bucket.assignment_cash
-        why = _L(lang, "Default standard CSP.", "默认开标准档 CSP。")
+        why = _L(lang, "Default: standard CSP.", "默认开标准档 CSP。")
         if want_cons:
             why = _L(
                 lang,
-                "Soft macro, reduce event, or quality/regime → conservative (or spread).",
-                "有软宏观、降风险事件或质量/体制信号，改用保守档（或价差）。",
+                "Moved to the conservative bucket (or a spread) because of a macro event, "
+                "risk-reducing news, or IV or market signals.",
+                "因为有宏观事件、需降风险的新闻，或 IV、市场环境信号，改用保守档（或价差）。",
             )
         extra = _quality_why(snap, market, lang)
         if extra:
@@ -551,7 +567,7 @@ def heuristic_desk(
         )
     return DeskOutput(
         decisions=decisions,
-        portfolio_note=_L(lang, "Heuristic desk (no LLM).", "启发式终审（未调用 LLM）。"),
+        portfolio_note=_L(lang, "Rule-based decision (no model call).", "启发式规则决策（未调用模型）。"),
         used_llm=False,
     )
 
@@ -591,8 +607,8 @@ def enforce_desk_rules(
                     action=DeskAction.SKIP,
                     why=_L(
                         lang,
-                        "CLOSE_EARLY ignored: this CLI has no live position feed.",
-                        "忽略 CLOSE_EARLY：当前 CLI 没有持仓数据。",
+                        "CLOSE_EARLY ignored: no live position data is available here.",
+                        "已忽略 CLOSE_EARLY：这里拿不到实时持仓数据。",
                     ),
                 )
             )
@@ -612,8 +628,8 @@ def enforce_desk_rules(
                     action=DeskAction.SKIP,
                     why=_L(
                         lang,
-                        "OPEN rejected: delta bucket missing from the candidates.",
-                        "OPEN 被拒绝：所选 Delta 档不在候选档位里。",
+                        "Open rejected: that delta bucket isn't among the candidates.",
+                        "已拒绝开仓：选的 Delta 档位不在候选里。",
                     ),
                 )
             )
@@ -626,8 +642,8 @@ def enforce_desk_rules(
                     action=DeskAction.SKIP,
                     why=_L(
                         lang,
-                        "OPEN rejected: contract_id is not in the delta buckets.",
-                        "OPEN 被拒绝：contract_id 不在候选档位里。",
+                        "Open rejected: that contract isn't in either delta bucket.",
+                        "已拒绝开仓：这个合约不在候选档位里。",
                     ),
                 )
             )
@@ -640,8 +656,8 @@ def enforce_desk_rules(
                     action=DeskAction.SKIP,
                     why=_L(
                         lang,
-                        "OPEN rejected: no valid bull put spread on this bucket.",
-                        "OPEN 被拒绝：该档没有可用的牛市看跌价差。",
+                        "Open rejected: this bucket has no valid bull put spread.",
+                        "已拒绝开仓：这个档位没有可用的牛市看跌价差。",
                     ),
                 )
             )
@@ -654,8 +670,8 @@ def enforce_desk_rules(
                         action=DeskAction.SKIP,
                         why=_L(
                             lang,
-                            "OPEN rejected: CSP would exceed remaining cash if assigned.",
-                            "OPEN 被拒绝：CSP 被指派后会超过剩余本金。",
+                            "Open rejected: assignment would need more cash than remains.",
+                            "已拒绝开仓：被指派所需现金会超过剩余本金。",
                         ),
                     )
                 )
@@ -677,8 +693,8 @@ def enforce_desk_rules(
             else:
                 why = _L(
                     lang,
-                    "Desk omitted this ticker; default SKIP.",
-                    "终审未覆盖该标的，默认跳过。",
+                    "The model gave no decision for this ticker; defaulting to SKIP.",
+                    "模型没有给出这个标的的决策，默认跳过。",
                 )
             cleaned.append(TickerDecision(ticker=snap.ticker, action=DeskAction.SKIP, why=why))
     return DeskOutput(
@@ -717,8 +733,8 @@ def enforce_call_rules(
                     action=DeskAction.SKIP,
                     why=_L(
                         lang,
-                        "CLOSE_EARLY ignored: this CLI has no live position feed.",
-                        "忽略 CLOSE_EARLY：当前 CLI 没有持仓数据。",
+                        "CLOSE_EARLY ignored: no live position data is available here.",
+                        "已忽略 CLOSE_EARLY：这里拿不到实时持仓数据。",
                     ),
                 )
             )
@@ -738,8 +754,8 @@ def enforce_call_rules(
                     action=DeskAction.SKIP,
                     why=_L(
                         lang,
-                        "OPEN rejected: delta bucket missing from the candidates.",
-                        "OPEN 被拒绝：所选 Delta 档不在候选档位里。",
+                        "Open rejected: that delta bucket isn't among the candidates.",
+                        "已拒绝开仓：选的 Delta 档位不在候选里。",
                     ),
                 )
             )
@@ -752,8 +768,8 @@ def enforce_call_rules(
                     action=DeskAction.SKIP,
                     why=_L(
                         lang,
-                        "OPEN rejected: contract_id is not in the delta buckets.",
-                        "OPEN 被拒绝：contract_id 不在候选档位里。",
+                        "Open rejected: that contract isn't in either delta bucket.",
+                        "已拒绝开仓：这个合约不在候选档位里。",
                     ),
                 )
             )
@@ -765,8 +781,8 @@ def enforce_call_rules(
                     action=DeskAction.SKIP,
                     why=_L(
                         lang,
-                        "OPEN rejected: this desk only sells covered calls.",
-                        "OPEN 被拒绝：持股台只卖 covered call，不做看涨价差。",
+                        "Open rejected: the call desk only sells covered calls.",
+                        "已拒绝开仓：卖 Call 决策台只做备兑 Call，不做价差。",
                     ),
                 )
             )
@@ -778,8 +794,8 @@ def enforce_call_rules(
                     action=DeskAction.SKIP,
                     why=_L(
                         lang,
-                        "OPEN rejected: not enough shares for one covered-call contract.",
-                        "OPEN 被拒绝：持股不足 100 股，无法卖一张 covered call。",
+                        "Open rejected: not enough shares for one covered call.",
+                        "已拒绝开仓：持股不足 100 股，卖不了一张备兑 Call。",
                     ),
                 )
             )
@@ -803,8 +819,8 @@ def enforce_call_rules(
             else:
                 why = _L(
                     lang,
-                    "Desk omitted this ticker; default SKIP.",
-                    "终审未覆盖该标的，默认跳过。",
+                    "The model gave no decision for this ticker; defaulting to SKIP.",
+                    "模型没有给出这个标的的决策，默认跳过。",
                 )
             cleaned.append(TickerDecision(ticker=snap.ticker, action=DeskAction.SKIP, why=why))
     return DeskOutput(
@@ -881,8 +897,8 @@ def trace_desk(
         failed = exc.call if isinstance(exc, StructuredOutputError) else None
         proposal.portfolio_note = _L(
             lang,
-            f"LLM desk failed ({exc}); used heuristic.",
-            f"LLM 终审失败（{exc}）；改用启发式。",
+            f"Model decision failed ({exc}); fell back to rule-based logic.",
+            f"模型决策失败（{exc}），已改用启发式规则。",
         )
         call = ModelCall(
             method="heuristic",

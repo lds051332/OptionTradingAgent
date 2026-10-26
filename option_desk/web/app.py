@@ -93,7 +93,7 @@ class RollBody(BaseModel):
 
 
 def _unknown_demo(lang: str) -> str:
-    return "没有这条回放" if lang == "zh" else "No such replay"
+    return "找不到这个回放" if lang == "zh" else "Replay not found"
 
 
 def _lang(request: Request, explicit: str | None = None) -> str:

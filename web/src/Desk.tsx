@@ -563,6 +563,17 @@ function stepTitle(step: TimelineStep, t: (key: MsgKey, vars?: Record<string, st
   return step.type;
 }
 
+/** Screener notes already shown by the tape-delay box; old markers still match cached runs. */
+const QUOTE_NOTE_MARKERS = [
+  "最新成交价，不是实时报价",
+  "Last trade, not a live quote",
+  "期权链上的 IV",
+  "Chain IV",
+  "过期成交价",
+  "Last print",
+  "链上 IV",
+];
+
 function Buckets({ snapshot, mode }: { snapshot: TickerSnapshot; mode: "put" | "call" }) {
   const { t } = useI18n();
   const buckets = Object.values(snapshot.buckets);
@@ -570,7 +581,7 @@ function Buckets({ snapshot, mode }: { snapshot: TickerSnapshot; mode: "put" | "
   const lastPrint = buckets.some((bucket) => bucket.csp.quote_source === "last");
   const ivNote = buckets.some((bucket) => bucket.csp.iv_source === "implied" || bucket.csp.iv_source === "floored");
   const otherNotes = (snapshot.notes ?? []).filter(
-    (note) => !note.includes("过期成交价") && !note.includes("Last print") && !note.includes("链上 IV") && !note.includes("Chain IV"),
+    (note) => !QUOTE_NOTE_MARKERS.some((marker) => note.includes(marker)),
   );
   return (
     <div className="mt-3 overflow-x-auto">

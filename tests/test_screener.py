@@ -248,7 +248,7 @@ def test_quality_notes_label_last_print_in_zh():
         )
     }
     notes = _quality_notes(buckets, Settings(), "zh")
-    assert any("过期成交价" in note for note in notes)
-    assert any("不是盘口" in note for note in notes)
+    assert any("最新成交价" in note for note in notes)
+    assert any("不是实时报价" in note for note in notes)
     assert any("反推" in note for note in notes)
     assert uses_last_print(buckets)

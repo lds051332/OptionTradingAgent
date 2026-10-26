@@ -53,7 +53,7 @@ def test_heuristic_desk_zh_why():
     out = heuristic_desk([snap], events=[], cash=55000, lang="zh")
     assert out.decisions[0].action == DeskAction.OPEN
     assert "默认开标准档" in out.decisions[0].why
-    assert "启发式终审" in out.portfolio_note
+    assert "启发式规则决策" in out.portfolio_note
 
 
 def test_markdown_zh_headers():

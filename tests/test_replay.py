@@ -13,8 +13,8 @@ def _decision(case, stamped: bool = True):
 def test_scenario_list_is_stable():
     listed = [item["id"] for item in list_scenarios("zh")]
     assert listed == list(SCENARIO_IDS)
-    assert list_scenarios("zh")[0]["title"] == "硬门控"
-    assert list_scenarios("en")[0]["title"] == "Hard gate"
+    assert list_scenarios("zh")[0]["title"] == "硬性风控"
+    assert list_scenarios("en")[0]["title"] == "Hard risk rule"
 
 
 def test_hard_gate_rewrites_open_to_skip():
@@ -38,7 +38,7 @@ def test_invented_contract_is_rejected():
     stamped = _decision(case)
     assert proposal.contract_id == "NVDA-2026-09-11-P-999"
     assert stamped.action == DeskAction.SKIP
-    assert "not in the delta buckets" in stamped.why
+    assert "isn't in either delta bucket" in stamped.why
     changed = {row["field"]: row for row in case.rewrite["changes"]}
     assert changed["contract_id"]["changed"] is True
     assert changed["contract_id"]["after"] == ""
