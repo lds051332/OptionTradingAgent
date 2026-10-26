@@ -15,6 +15,21 @@ def test_chinese_put_with_wan_cash():
     assert req.delta == pytest.approx(0.20)
 
 
+def test_spoken_chinese_cash():
+    assert _parse("现金一万五").request.cash == 15_000
+    assert _parse("两万三").request.cash == 23_000
+    assert _parse("五千").request.cash == 5_000
+    assert _parse("十五万").request.cash == 150_000
+    assert _parse("十二万五").request.cash == 125_000
+    assert _parse("一万五千").request.cash == 15_000
+    assert _parse("三千五").request.cash == 3_500
+    assert _parse("现金1.5万").request.cash == 15_000
+
+    result = _parse("ko 这支稳不 一万五")
+    assert result.complete
+    assert (result.request.tickers, result.request.cash, result.request.language) == (["KO"], 15_000, "zh")
+
+
 def test_english_covered_call():
     result = _parse("Covered call on AAPL, 300 shares, cost 180")
     req = result.request

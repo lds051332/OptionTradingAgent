@@ -53,3 +53,5 @@ qrcode/*
 
 # Finch partner docs and samples (local reference only; not option_desk/finch/)
 /finch/
+
+bugs/

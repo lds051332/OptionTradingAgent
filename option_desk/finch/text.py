@@ -53,6 +53,7 @@ COPY: dict[str, dict[str, str]] = {
             "Not enough information to run the desk. Please start a new request with tickers and cash, "
             "or ticker, shares and cost basis for a covered call."
         ),
+        "err_unanswered": "The missing details did not arrive before the deadline, so this request has ended.",
         "err_daily": "Today's free analysis quota is used up. Please try again tomorrow.",
         "err_data": "The market data source is rate-limiting right now. Please try again in a few minutes.",
         "skip_no_data": "No option chain came back for this ticker; see the warnings below.",
@@ -118,6 +119,7 @@ COPY: dict[str, dict[str, str]] = {
         "stage_done": "完成",
         "err_analysis": "分析没能完成，请稍后再试。",
         "err_input": "信息不足，无法开跑。请重新发起，写明标的和现金；备兑请写标的、持股数和成本。",
+        "err_unanswered": "临近截止仍未补全，本次调用已结束。",
         "err_daily": "今天的免费分析次数已用完，请明天再试。",
         "err_data": "行情数据源暂时限流，请几分钟后再试。",
         "skip_no_data": "没拿到这只标的的期权链，见下方警告。",

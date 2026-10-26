@@ -86,6 +86,10 @@ _CASH_LABELED = re.compile(
 _CASH_DOLLAR = re.compile(r"\$\s*" + _NUMBER + r"\s*(k|m)?(?![A-Za-z0-9])", re.IGNORECASE)
 _CASH_UNIT = re.compile(_NUMBER + r"\s*(万|w|k|千|m|百万)(?![A-Za-z0-9])", re.IGNORECASE)
 _BARE = re.compile(r"(?<![\d.])" + _NUMBER + r"(?![\d.%])")
+# 一万五 = 15000, 两万三 = 23000, 十五万 = 150000, 五千 = 5000. A trailing digit is the next lower place.
+_CN_DIGIT = {"零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+_CN_SMALL = r"(?:[一二两三四五六七八九]?十[一二三四五六七八九]?|[一二两三四五六七八九])"
+_CASH_SPOKEN = re.compile(rf"({_CN_SMALL})万([一二三四五六七八九])?千?|({_CN_SMALL})千(?!万)([一二三四五六七八九])?")
 
 
 @dataclass
@@ -188,6 +192,40 @@ def _delta(text: str) -> tuple[float | None, str]:
     return None, text
 
 
+def _cn_small(text: str) -> int | None:
+    """一, 十, 十五, 二十三. Stops below 百."""
+    if text == "十":
+        return 10
+    if "十" in text:
+        left, _, right = text.partition("十")
+        tens = 1 if left == "" else _CN_DIGIT.get(left)
+        if tens is None:
+            return None
+        if right == "":
+            return tens * 10
+        ones = _CN_DIGIT.get(right)
+        if ones is None:
+            return None
+        return tens * 10 + ones
+    if len(text) == 1 and text in _CN_DIGIT:
+        return _CN_DIGIT[text]
+    return None
+
+
+def _spoken_cash(match: re.Match[str]) -> float | None:
+    if match.group(1):
+        head = _cn_small(match.group(1))
+        if head is None:
+            return None
+        tail = match.group(2)
+        return head * 10_000 + (_CN_DIGIT[tail] * 1_000 if tail else 0)
+    head = _cn_small(match.group(3))
+    if head is None:
+        return None
+    tail = match.group(4)
+    return head * 1_000 + (_CN_DIGIT[tail] * 100 if tail else 0)
+
+
 def _cash(text: str) -> tuple[float | None, str]:
     match, rest = _first(_CASH_LABELED, text)
     if match:
@@ -198,6 +236,11 @@ def _cash(text: str) -> tuple[float | None, str]:
     match, rest = _first(_CASH_UNIT, text)
     if match:
         return _amount(match.group(1), match.group(2), match.group(3)), rest
+    match = _CASH_SPOKEN.search(text)
+    if match:
+        spoken = _spoken_cash(match)
+        if spoken is not None:
+            return spoken, _blank(text, match)
     for match in _BARE.finditer(text):
         value = _amount(match.group(1), match.group(2))
         if value >= MIN_CASH:

@@ -292,6 +292,36 @@ def test_past_deadline_expires(make_desk):
     assert desk.poll(task_id).json()["status"] == "expired"
 
 
+def test_spoken_cash_runs_without_a_follow_up(make_desk):
+    desk = make_desk()
+    task_id = desk.invoke("ko 这支稳不 一万五").json()["merchant_task_id"]
+    desk.runner.process(task_id)
+    done = desk.poll(task_id).json()
+    assert done["status"] == "completed"
+    assert desk.calls[0]["tickers"] == ["KO"]
+    assert desk.calls[0]["settings"].cash == 15_000
+
+
+def test_unanswered_question_fails_before_the_deadline(make_desk):
+    desk = make_desk()
+    soon = datetime.now(timezone.utc) + timedelta(seconds=20)
+    task_id = desk.invoke("帮我看看", deadline=soon).json()["merchant_task_id"]
+    snap = desk.poll(task_id).json()
+    assert snap["status"] == "failed"
+    assert snap["error"]["code"] == "insufficient_input"
+    assert "标的代码" in snap["error"]["message"]
+    assert "现金" in snap["error"]["message"]
+    assert desk.answer(task_id, "NVDA 卖put 现金5万").status_code == 409
+    assert desk.calls == []
+
+    later = datetime.now(timezone.utc) + timedelta(minutes=10)
+    waiting = desk.invoke("帮我看看", deadline=later).json()["merchant_task_id"]
+    assert desk.poll(waiting).json()["status"] == "input_required"
+
+    queued = desk.invoke("NVDA 卖put 现金5万", deadline=soon).json()["merchant_task_id"]
+    assert desk.poll(queued).json()["status"] == "queued"
+
+
 def test_pipeline_error_fails_without_leaking_details(make_desk):
     def broken(tickers, as_of=None, settings=None):
         yield stream_event("run_started", message="start")

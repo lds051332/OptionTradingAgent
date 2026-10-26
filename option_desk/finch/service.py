@@ -35,6 +35,8 @@ log = logging.getLogger(__name__)
 
 PROTOCOL_VERSION = "2.0"
 QUESTION_ID = "desk_inputs"
+# Report a still-open question before the platform's own deadline closes the invocation.
+INPUT_GIVE_UP_SECONDS = 30
 
 
 class RequestRejected(Exception):
@@ -251,10 +253,34 @@ class TaskService:
             self._runner.submit(merchant_task_id)
         return 202, accepted
 
+    def _give_up_unanswered(self, task: Task) -> Task:
+        """Fail an unanswered question while the platform can still record our error."""
+        now = self._clock()
+        if task.status != INPUT_REQUIRED or not (
+            task.deadline_at - INPUT_GIVE_UP_SECONDS <= now <= task.deadline_at
+        ):
+            return task
+        result = parse_texts(task.texts, self._config.max_tickers)
+        lang = result.request.language
+        failed = self._store.transition(
+            task.merchant_task_id,
+            {INPUT_REQUIRED},
+            status=FAILED,
+            error_code="insufficient_input",
+            error_message=ft(lang, "err_unanswered") + "\n" + question_text(result, self._config.max_tickers),
+            questions=None,
+            language=lang,
+        )
+        if failed is None:
+            return self._store.get_task(task.merchant_task_id) or task
+        log.info("finch task %s unanswered before deadline", task.merchant_task_id)
+        return failed
+
     def poll(self, merchant_task_id: str) -> dict[str, Any] | None:
         task = self._store.get_task(merchant_task_id)
         if task is None:
             return None
+        task = self._give_up_unanswered(task)
         if task.status in OPEN and self._clock() > task.deadline_at:
             task = self._store.transition(merchant_task_id, OPEN, status=EXPIRED) or self._store.get_task(
                 merchant_task_id
