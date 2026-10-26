@@ -39,7 +39,7 @@ from option_desk.positions.market import is_us_equity_rth
 from option_desk.positions.roll import collect_roll_candidates
 from option_desk.schemas import ContractQuote
 from option_desk.stream import StreamEvent
-from option_desk.web import seo
+from option_desk.web import ads, seo
 
 TICKER_RE = re.compile(r"^[A-Za-z][A-Za-z.]{0,9}$")
 
@@ -305,6 +305,7 @@ def create_app() -> FastAPI:
         settings = get_settings()
         payload = _defaults(settings)
         payload["suggested_language"] = suggested_language(request)
+        payload["ads"] = ads.ads_payload()
         return payload
 
     @app.get("/api/demos")
@@ -445,6 +446,13 @@ def create_app() -> FastAPI:
     @app.get("/robots.txt")
     def robots(request: Request) -> PlainTextResponse:
         return PlainTextResponse(seo.robots_txt(request), headers={"Cache-Control": HTML_CACHE_CONTROL})
+
+    @app.get("/ads.txt")
+    def ads_txt() -> PlainTextResponse:
+        body = ads.ads_txt()
+        if body is None:
+            raise HTTPException(status_code=404)
+        return PlainTextResponse(body, headers={"Cache-Control": HTML_CACHE_CONTROL})
 
     @app.get("/sitemap.xml")
     def sitemap(request: Request) -> Response:

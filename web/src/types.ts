@@ -14,6 +14,12 @@ export type Defaults = {
   cost_basis?: number | null;
   language?: string;
   suggested_language?: string | null;
+  ads?: AdsConfig | null;
+};
+
+export type AdsConfig = {
+  client: string;
+  slot: string | null;
 };
 
 export type DeskMode = "put" | "call";

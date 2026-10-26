@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AdSlot } from "./Ads";
 import { fetchDemos, startReplay, type DemoSummary } from "./api";
 import { BrandLockup } from "./Brand";
 import { applyEvent, StepCard } from "./Desk";
@@ -99,6 +100,7 @@ export function ReplayIndex() {
           </Link>
         ))}
       </div>
+      <AdSlot className="mt-10" />
     </div>
   );
 }

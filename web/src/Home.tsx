@@ -1,3 +1,4 @@
+import { AdSlot } from "./Ads";
 import { BrandLockup } from "./Brand";
 import { LangSwitch, useI18n } from "./locale";
 import { Link } from "./router";
@@ -47,6 +48,7 @@ export function Home() {
         <span className="text-[var(--brass)]">{t("home.replayAction")}</span>
         <span> — {t("home.replayBody")}</span>
       </Link>
+      <AdSlot className="mt-10" />
     </div>
   );
 }

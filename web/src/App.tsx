@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { configureAds } from "./adsense";
 import { fetchMe } from "./api";
 import { BrandSeal } from "./Brand";
 import { Desk } from "./Desk";
 import { Home } from "./Home";
+import { InfoPage } from "./InfoPage";
 import { PositionsPage } from "./PositionsPage";
 import { ReplayIndex, ReplayPlayer } from "./Replay";
 import { PageFrame } from "./PageFrame";
@@ -26,6 +28,7 @@ export function App() {
       if (!urlLang() && !readStoredLang() && (suggested === "zh" || suggested === "en")) {
         setLang(suggested, { persist: false });
       }
+      configureAds(me.ads);
       setDefaults(me);
     } catch (err) {
       setDefaults(null);
@@ -46,6 +49,8 @@ export function App() {
       "/call": t("app.titleCall"),
       "/positions": t("app.titlePositions"),
       "/replay": t("app.titleReplay"),
+      "/about": t("app.titleAbout"),
+      "/privacy": t("app.titlePrivacy"),
     } as const;
     document.title =
       path.startsWith("/replay") ? t("app.titleReplay") : (titles[path as keyof typeof titles] ?? titles["/"]);
@@ -58,6 +63,8 @@ export function App() {
       path === "/call" ||
       path === "/positions" ||
       path === "/replay" ||
+      path === "/about" ||
+      path === "/privacy" ||
       path.startsWith("/replay/");
     if (!known) navigate("/", { replace: true });
   }, [path, navigate]);
@@ -100,6 +107,8 @@ export function App() {
       <ReplayIndex key={`replay-${lang}`} />
     ) : replayScenario ? (
       <ReplayPlayer key={`${path}-${lang}`} scenario={replayScenario} />
+    ) : path === "/about" || path === "/privacy" ? (
+      <InfoPage key={path} page={path === "/about" ? "about" : "privacy"} />
     ) : (
       <Home />
     );

@@ -38,6 +38,25 @@ const zh = {
     titleCall: "卖 Call 决策台 · 摩根大山",
     titlePositions: "我的持仓 · 摩根大山",
     titleReplay: "规则回放 · 摩根大山",
+    titleAbout: "关于 · 摩根大山",
+    titlePrivacy: "隐私政策 · 摩根大山",
+  },
+  footer: {
+    about: "关于",
+    privacy: "隐私政策",
+    cookies: "Cookie 设置",
+  },
+  ads: {
+    label: "广告",
+  },
+  consent: {
+    title: "Cookie 与广告",
+    body: "本站用 Google AdSense 展示广告来分担服务器费用。同意后，Google 可能使用 Cookie 为你展示个性化广告；拒绝则只展示非个性化广告。你的持仓等数据只保存在本机浏览器里。",
+    policy: "查看隐私政策",
+    accept: "同意",
+    deny: "拒绝",
+    currentGranted: "你目前的选择：同意个性化广告。",
+    currentDenied: "你目前的选择：只看非个性化广告。",
   },
   replay: {
     title: "规则回放",
@@ -375,6 +394,25 @@ const en: NestedStrings<typeof zh> = {
     titleCall: "Call desk · 摩根大山",
     titlePositions: "My positions · 摩根大山",
     titleReplay: "Rule replays · 摩根大山",
+    titleAbout: "About · 摩根大山",
+    titlePrivacy: "Privacy policy · 摩根大山",
+  },
+  footer: {
+    about: "About",
+    privacy: "Privacy",
+    cookies: "Cookie settings",
+  },
+  ads: {
+    label: "Advertisement",
+  },
+  consent: {
+    title: "Cookies and ads",
+    body: "This site shows Google AdSense ads to help cover server costs. If you accept, Google may use cookies to show you personalized ads; if you decline, you'll only see non-personalized ads. Your positions and other data stay in this browser.",
+    policy: "Read the privacy policy",
+    accept: "Accept",
+    deny: "Decline",
+    currentGranted: "Current choice: personalized ads allowed.",
+    currentDenied: "Current choice: non-personalized ads only.",
   },
   replay: {
     title: "Rule replays",

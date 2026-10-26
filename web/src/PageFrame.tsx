@@ -1,5 +1,8 @@
 import { useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { ConsentBanner } from "./Ads";
+import { openConsentSettings, useAds } from "./adsense";
 import { useI18n } from "./locale";
+import { Link } from "./router";
 import { media } from "./staticMedia";
 
 type Rail = "wechat" | "alipay" | "add";
@@ -64,7 +67,10 @@ export function PageFrame({ children }: { children: ReactNode }) {
           <PayTicket compact onOpen={setRail} rails={rails.pay} />
         </aside>
       ) : null}
-      <div className="page-main">{children}</div>
+      <div className="page-main">
+        {children}
+        <SiteFooter />
+      </div>
       {HAS_CONTACT && rails.contact ? (
         <aside className="page-rail page-rail-contact" aria-label={t("frame.contactLabel")}>
           <ContactTicket compact onOpen={setRail} rail={rails.contact} />
@@ -79,7 +85,25 @@ export function PageFrame({ children }: { children: ReactNode }) {
       {rails.all.length > 0 ? (
         <QrDialog rails={rails.all} rail={rail} onRail={setRail} onClose={() => setRail(null)} />
       ) : null}
+      <ConsentBanner />
     </div>
+  );
+}
+
+function SiteFooter() {
+  const { t } = useI18n();
+  const { config } = useAds();
+  return (
+    <footer className="site-foot">
+      <Link to="/about">{t("footer.about")}</Link>
+      <Link to="/privacy">{t("footer.privacy")}</Link>
+      {config ? (
+        <button type="button" onClick={openConsentSettings}>
+          {t("footer.cookies")}
+        </button>
+      ) : null}
+      <span>© {new Date().getFullYear()} {t("common.brand")}</span>
+    </footer>
   );
 }
 

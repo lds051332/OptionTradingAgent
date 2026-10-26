@@ -17,6 +17,7 @@ from fastapi import Request
 
 from option_desk.i18n import lang_from_headers
 from option_desk.replay import list_scenarios, scenario_ids
+from option_desk.web.ads import adsense_client
 
 PUBLIC_URL_ENV = "OPTION_DESK_PUBLIC_URL"
 GOOGLE_VERIFY_ENV = "OPTION_DESK_GOOGLE_SITE_VERIFICATION"
@@ -101,9 +102,31 @@ _PAGES: dict[str, dict[str, PageMeta]] = {
             "rule, a made-up contract, and cutting risk. No live quotes, no model calls.",
         ),
     },
+    "/about": {
+        "zh": PageMeta(
+            "关于 · 摩根大山",
+            "摩根大山轮式策略决策台是什么、怎么工作、数据从哪来、有哪些局限，以及作者和联系方式。",
+        ),
+        "en": PageMeta(
+            "About · 摩根大山",
+            "What the 摩根大山 wheel strategy desk is, how it works, where its data comes from, its "
+            "limits, and who built it.",
+        ),
+    },
+    "/privacy": {
+        "zh": PageMeta(
+            "隐私政策 · 摩根大山",
+            "摩根大山决策台收集哪些数据、数据存在哪里、与哪些第三方共享，以及广告和 Cookie 的使用方式。",
+        ),
+        "en": PageMeta(
+            "Privacy policy · 摩根大山",
+            "What data the 摩根大山 desk collects, where it is stored, which third parties receive it, "
+            "and how ads and cookies are used.",
+        ),
+    },
 }
 
-_SITEMAP_PATHS = ("/", "/put", "/call", "/replay")
+_SITEMAP_PATHS = ("/", "/put", "/call", "/replay", "/about", "/privacy")
 
 
 def normalize_path(path: str) -> str:
@@ -187,6 +210,9 @@ def head_tags(path: str, lang: str, base: str, *, explicit_lang: bool) -> tuple[
     verify = os.environ.get(GOOGLE_VERIFY_ENV, "").strip()
     if verify:
         tags.append(f'<meta name="google-site-verification" content="{_attr(verify)}" />')
+    client = adsense_client()
+    if client:
+        tags.append(f'<meta name="google-adsense-account" content="{client}" />')
     if meta is None:
         home = _PAGES["/"][lang]
         tags.append(f"<title>{html.escape(home.title)}</title>")
